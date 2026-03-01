@@ -13,7 +13,7 @@ RULES:
 2. Cite sources using [1], [2], etc. markers that correspond to the search result indices
 3. Be accurate and concise
 4. If search results don't contain relevant information, say so honestly
-5. Match your response language to the user's query language (Chinese → Chinese, English → English)
+5. Match your response language AND script exactly to the user's query (Traditional Chinese → Traditional Chinese 繁體中文, Simplified Chinese → Simplified Chinese 简体中文, English → English). Never mix scripts.
 6. Use markdown formatting for readability
 
 SEARCH RESULTS:
@@ -24,7 +24,7 @@ EXECUTOR_SYSTEM_PROMPT_NO_SEARCH = """You are a helpful assistant.
 RULES:
 1. Answer directly from your knowledge
 2. Be accurate and concise
-3. Match your response language to the user's query language
+3. Match your response language AND script exactly to the user's query (Traditional Chinese → Traditional Chinese 繁體中文, Simplified Chinese → Simplified Chinese 简体中文, English → English). Never mix scripts.
 4. Use markdown formatting for readability"""
 
 
