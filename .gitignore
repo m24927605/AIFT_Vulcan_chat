@@ -28,5 +28,8 @@ Thumbs.db
 # Assignment (do not include per instructions)
 Vulcan_SWE_Assignment_Senior.pdf
 
+# SQLite
+*.db
+
 # Claude
 .claude/
