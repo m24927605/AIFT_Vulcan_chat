@@ -1,5 +1,6 @@
 import json
 import logging
+from dataclasses import asdict
 
 from fastapi import APIRouter
 from sse_starlette.sse import EventSourceResponse
@@ -7,6 +8,13 @@ from sse_starlette.sse import EventSourceResponse
 from app.core.config import settings
 from app.core.models.schemas import ChatRequest
 from app.core.services.chat_service import ChatService
+from app.core.models.events import (
+    PlannerEvent,
+    SearchingEvent,
+    ChunkEvent,
+    CitationsEvent,
+    DoneEvent,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +29,20 @@ def get_chat_service() -> ChatService:
     )
 
 
+def _event_to_sse(event) -> dict:
+    match event:
+        case PlannerEvent():
+            return {"event": "planner", "data": asdict(event)}
+        case SearchingEvent():
+            return {"event": "searching", "data": asdict(event)}
+        case ChunkEvent():
+            return {"event": "chunk", "data": {"content": event.content}}
+        case CitationsEvent():
+            return {"event": "citations", "data": {"citations": event.citations}}
+        case DoneEvent():
+            return {"event": "done", "data": {}}
+
+
 @router.post("/api/chat")
 async def chat(request: ChatRequest):
     service = get_chat_service()
@@ -28,13 +50,14 @@ async def chat(request: ChatRequest):
 
     async def event_generator():
         try:
-            async for event_type, data in service.chat_stream(
+            async for event in service.process_message(
                 message=request.message,
                 history=history,
             ):
+                sse = _event_to_sse(event)
                 yield {
-                    "event": event_type,
-                    "data": json.dumps(data, ensure_ascii=False),
+                    "event": sse["event"],
+                    "data": json.dumps(sse["data"], ensure_ascii=False),
                 }
         except Exception as e:
             logger.error(f"Chat stream error: {e}")

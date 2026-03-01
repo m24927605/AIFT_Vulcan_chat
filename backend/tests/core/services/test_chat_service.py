@@ -1,9 +1,15 @@
-import json
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 
 from app.core.services.chat_service import ChatService
 from app.core.models.schemas import PlannerDecision, SearchResult
+from app.core.models.events import (
+    PlannerEvent,
+    SearchingEvent,
+    ChunkEvent,
+    CitationsEvent,
+    DoneEvent,
+)
 
 
 @pytest.fixture
@@ -16,7 +22,7 @@ def chat_service():
 
 
 @pytest.mark.asyncio
-async def test_chat_stream_with_search(chat_service):
+async def test_chat_stream_yields_chat_events_with_search(chat_service):
     planner_decision = PlannerDecision(
         needs_search=True,
         reasoning="Need latest stock info",
@@ -54,17 +60,24 @@ async def test_chat_stream_with_search(chat_service):
         ),
     ):
         events = []
-        async for event_type, data in chat_service.chat_stream("TSMC stock?"):
-            events.append((event_type, data))
+        async for event in chat_service.process_message("TSMC stock?"):
+            events.append(event)
 
-        event_types = [e[0] for e in events]
-        assert "planner" in event_types
-        assert "chunk" in event_types
-        assert "done" in event_types
+        assert isinstance(events[0], PlannerEvent)
+        assert events[0].needs_search is True
+
+        searching_events = [e for e in events if isinstance(e, SearchingEvent)]
+        assert len(searching_events) >= 2
+
+        chunk_events = [e for e in events if isinstance(e, ChunkEvent)]
+        assert len(chunk_events) == 2
+        assert chunk_events[0].content == "TSMC "
+
+        assert isinstance(events[-1], DoneEvent)
 
 
 @pytest.mark.asyncio
-async def test_chat_stream_without_search(chat_service):
+async def test_chat_stream_yields_chat_events_without_search(chat_service):
     planner_decision = PlannerDecision(
         needs_search=False,
         reasoning="Simple greeting",
@@ -90,10 +103,17 @@ async def test_chat_stream_without_search(chat_service):
         ),
     ):
         events = []
-        async for event_type, data in chat_service.chat_stream("Hello!"):
-            events.append((event_type, data))
+        async for event in chat_service.process_message("Hello!"):
+            events.append(event)
 
-        event_types = [e[0] for e in events]
-        assert "planner" in event_types
-        assert "searching" not in event_types
-        assert "chunk" in event_types
+        assert isinstance(events[0], PlannerEvent)
+        assert events[0].needs_search is False
+
+        searching_events = [e for e in events if isinstance(e, SearchingEvent)]
+        assert len(searching_events) == 0
+
+        chunk_events = [e for e in events if isinstance(e, ChunkEvent)]
+        assert len(chunk_events) == 1
+        assert chunk_events[0].content == "Hello!"
+
+        assert isinstance(events[-1], DoneEvent)

@@ -1,10 +1,17 @@
-import json
 import logging
 from collections.abc import AsyncGenerator
 
 from app.core.agents.planner import PlannerAgent
 from app.core.agents.executor import ExecutorAgent
 from app.core.services.search_service import SearchService
+from app.core.models.events import (
+    ChatEvent,
+    PlannerEvent,
+    SearchingEvent,
+    ChunkEvent,
+    CitationsEvent,
+    DoneEvent,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -20,31 +27,36 @@ class ChatService:
         self._executor = ExecutorAgent(api_key=openai_api_key, model=openai_model)
         self._search = SearchService(api_key=tavily_api_key)
 
-    async def chat_stream(
+    async def process_message(
         self,
         message: str,
         history: list[dict] | None = None,
-    ) -> AsyncGenerator[tuple[str, dict], None]:
+    ) -> AsyncGenerator[ChatEvent, None]:
         # Step 1: Planner decides
         decision = await self._planner.plan(message, history)
-        yield "planner", decision.model_dump()
+        yield PlannerEvent(
+            needs_search=decision.needs_search,
+            reasoning=decision.reasoning,
+            search_queries=decision.search_queries,
+            query_type=decision.query_type,
+        )
 
         # Step 2: Search if needed
         search_results = []
         if decision.needs_search and decision.search_queries:
             for query in decision.search_queries:
-                yield "searching", {"query": query, "status": "searching"}
+                yield SearchingEvent(query=query, status="searching")
 
             search_results = await self._search.search_multiple(
                 decision.search_queries
             )
 
             for query in decision.search_queries:
-                yield "searching", {
-                    "query": query,
-                    "status": "done",
-                    "results_count": len(search_results),
-                }
+                yield SearchingEvent(
+                    query=query,
+                    status="done",
+                    results_count=len(search_results),
+                )
 
         # Step 3: Executor generates answer
         async for chunk in self._executor.execute(
@@ -52,13 +64,16 @@ class ChatService:
             search_results=search_results,
             history=history,
         ):
-            yield "chunk", {"content": chunk}
+            yield ChunkEvent(content=chunk)
 
         # Step 4: Send citations
         if search_results:
             citations = self._executor.build_citations(search_results)
-            yield "citations", {
-                "citations": [c.model_dump() for c in citations]
-            }
+            yield CitationsEvent(
+                citations=[
+                    {"index": c.index, "title": c.title, "url": c.url, "snippet": c.snippet}
+                    for c in citations
+                ]
+            )
 
-        yield "done", {}
+        yield DoneEvent()
