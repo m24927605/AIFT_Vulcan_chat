@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { useChat } from "@/hooks/useChat";
+import { useLocale } from "@/i18n";
 import { ChatPanel } from "./ChatPanel";
 import { Sidebar } from "./Sidebar";
 
 export function ChatLayout() {
+  const { t } = useLocale();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const {
     messages,
@@ -66,7 +68,7 @@ export function ChatLayout() {
             &#9776;
           </button>
           <h1 className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-            Web Search Chatbot
+            {t.appTitle}
           </h1>
         </div>
 

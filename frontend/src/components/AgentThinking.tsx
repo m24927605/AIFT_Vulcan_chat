@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import type { PlannerData } from "@/lib/types";
+import { useLocale } from "@/i18n";
 
 interface AgentThinkingProps {
   planner: PlannerData;
 }
 
 export function AgentThinking({ planner }: AgentThinkingProps) {
+  const { t } = useLocale();
   const [expanded, setExpanded] = useState(true);
 
   return (
@@ -17,7 +19,7 @@ export function AgentThinking({ planner }: AgentThinkingProps) {
         className="w-full flex items-center gap-2 px-3 py-2 text-xs text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
       >
         <span className="font-medium">
-          {planner.needs_search ? "Searching the web" : "Answering directly"}
+          {planner.needs_search ? t.searchingWeb : t.answeringDirectly}
         </span>
         <span className="ml-auto">{expanded ? "▼" : "▶"}</span>
       </button>

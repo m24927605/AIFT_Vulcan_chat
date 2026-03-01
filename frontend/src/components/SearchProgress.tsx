@@ -1,12 +1,15 @@
 "use client";
 
 import type { SearchingData } from "@/lib/types";
+import { useLocale } from "@/i18n";
 
 interface SearchProgressProps {
   searches: SearchingData[];
 }
 
 export function SearchProgress({ searches }: SearchProgressProps) {
+  const { t } = useLocale();
+
   if (searches.length === 0) return null;
 
   return (
@@ -25,7 +28,7 @@ export function SearchProgress({ searches }: SearchProgressProps) {
             {s.query}
             {s.status === "done" && s.results_count !== undefined && (
               <span className="ml-1 text-gray-400">
-                ({s.results_count} results)
+                ({s.results_count} {t.results})
               </span>
             )}
           </span>

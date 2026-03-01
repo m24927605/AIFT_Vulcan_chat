@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { ChatMessage, CitationItem, PlannerData, SearchingData } from "@/lib/types";
+import { useLocale } from "@/i18n";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
 
@@ -24,6 +25,7 @@ export function ChatPanel({
   citations,
   onSend,
 }: ChatPanelProps) {
+  const { t } = useLocale();
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -37,8 +39,8 @@ export function ChatPanel({
       <div className="flex-1 overflow-y-auto px-4 py-6">
         {showEmpty && (
           <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-gray-500">
-            <h2 className="text-2xl font-semibold mb-2">Web Search Chatbot</h2>
-            <p className="text-sm">Ask me anything. I can search the web for the latest info.</p>
+            <h2 className="text-2xl font-semibold mb-2">{t.emptyTitle}</h2>
+            <p className="text-sm">{t.emptySubtitle}</p>
           </div>
         )}
         {messages.map((msg, i) => {

@@ -1,6 +1,7 @@
 "use client";
 
 import type { Conversation } from "@/lib/types";
+import { useLocale } from "@/i18n";
 
 interface SidebarProps {
   conversations: Conversation[];
@@ -19,6 +20,8 @@ export function Sidebar({
   onDelete,
   onClose,
 }: SidebarProps) {
+  const { t } = useLocale();
+
   return (
     <div className="flex flex-col h-full bg-gray-900 text-white">
       <div className="p-3">
@@ -30,7 +33,7 @@ export function Sidebar({
           className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border border-gray-600 hover:bg-gray-700 transition-colors text-sm"
         >
           <span>+</span>
-          <span>New Chat</span>
+          <span>{t.newChat}</span>
         </button>
       </div>
       <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-0.5">
