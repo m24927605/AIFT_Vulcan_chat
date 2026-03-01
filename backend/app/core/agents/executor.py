@@ -1,8 +1,8 @@
 import logging
 from collections.abc import AsyncGenerator
 
-from app.models.schemas import Citation, SearchResult
-from app.services.openai_client import OpenAIClient
+from app.core.models.schemas import Citation, SearchResult
+from app.core.services.openai_client import OpenAIClient
 
 logger = logging.getLogger(__name__)
 

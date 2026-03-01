@@ -3,7 +3,7 @@ import logging
 
 import httpx
 
-from app.models.schemas import SearchResult
+from app.core.models.schemas import SearchResult
 
 logger = logging.getLogger(__name__)
 

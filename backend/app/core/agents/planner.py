@@ -1,8 +1,8 @@
 import json
 import logging
 
-from app.models.schemas import PlannerDecision
-from app.services.openai_client import OpenAIClient
+from app.core.models.schemas import PlannerDecision
+from app.core.services.openai_client import OpenAIClient
 
 logger = logging.getLogger(__name__)
 

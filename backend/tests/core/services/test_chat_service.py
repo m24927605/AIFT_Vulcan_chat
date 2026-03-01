@@ -2,8 +2,8 @@ import json
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
-from app.services.chat_service import ChatService
-from app.models.schemas import PlannerDecision, SearchResult
+from app.core.services.chat_service import ChatService
+from app.core.models.schemas import PlannerDecision, SearchResult
 
 
 @pytest.fixture

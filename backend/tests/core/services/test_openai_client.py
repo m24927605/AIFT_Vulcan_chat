@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
-from app.services.openai_client import OpenAIClient
+from app.core.services.openai_client import OpenAIClient
 
 
 @pytest.fixture

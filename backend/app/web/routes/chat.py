@@ -4,9 +4,9 @@ import logging
 from fastapi import APIRouter
 from sse_starlette.sse import EventSourceResponse
 
-from app.config import settings
-from app.models.schemas import ChatRequest
-from app.services.chat_service import ChatService
+from app.core.config import settings
+from app.core.models.schemas import ChatRequest
+from app.core.services.chat_service import ChatService
 
 logger = logging.getLogger(__name__)
 

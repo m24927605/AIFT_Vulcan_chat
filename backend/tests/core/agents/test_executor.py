@@ -1,8 +1,8 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
-from app.agents.executor import ExecutorAgent
-from app.models.schemas import SearchResult, Citation
+from app.core.agents.executor import ExecutorAgent
+from app.core.models.schemas import SearchResult, Citation
 
 
 @pytest.fixture

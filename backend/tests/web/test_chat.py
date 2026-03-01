@@ -3,7 +3,7 @@ import pytest
 from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.web.main import app
 
 
 @pytest.fixture
@@ -30,7 +30,7 @@ def test_chat_returns_sse_stream(client):
         yield "done", {}
 
     with patch(
-        "app.api.routes.chat.get_chat_service"
+        "app.web.routes.chat.get_chat_service"
     ) as mock_get_service:
         mock_service = AsyncMock()
         mock_service.chat_stream = mock_chat_stream

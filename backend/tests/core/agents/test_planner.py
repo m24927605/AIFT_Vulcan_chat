@@ -2,8 +2,8 @@ import json
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from app.agents.planner import PlannerAgent
-from app.models.schemas import PlannerDecision
+from app.core.agents.planner import PlannerAgent
+from app.core.models.schemas import PlannerDecision
 
 
 @pytest.fixture

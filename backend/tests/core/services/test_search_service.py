@@ -1,8 +1,8 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
-from app.services.search_service import SearchService
-from app.models.schemas import SearchResult
+from app.core.services.search_service import SearchService
+from app.core.models.schemas import SearchResult
 
 
 @pytest.fixture

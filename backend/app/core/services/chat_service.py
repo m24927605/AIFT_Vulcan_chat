@@ -2,9 +2,9 @@ import json
 import logging
 from collections.abc import AsyncGenerator
 
-from app.agents.planner import PlannerAgent
-from app.agents.executor import ExecutorAgent
-from app.services.search_service import SearchService
+from app.core.agents.planner import PlannerAgent
+from app.core.agents.executor import ExecutorAgent
+from app.core.services.search_service import SearchService
 
 logger = logging.getLogger(__name__)
 
