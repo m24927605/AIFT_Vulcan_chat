@@ -13,6 +13,9 @@ export const translations = {
     // AgentThinking
     searchingWeb: "Searching the web",
     answeringDirectly: "Answering directly",
+    // SearchBadge (past tense, for completed messages)
+    searchedWeb: "Searched the web",
+    answeredDirectly: "Answered directly",
     // SearchProgress
     results: "results",
     // CitationList
@@ -28,6 +31,8 @@ export const translations = {
     newChat: "新對話",
     searchingWeb: "正在搜尋網路",
     answeringDirectly: "直接回答",
+    searchedWeb: "已搜尋網路",
+    answeredDirectly: "已直接回答",
     results: "筆結果",
     sources: "參考來源",
     appTitle: "網路搜尋聊天機器人",

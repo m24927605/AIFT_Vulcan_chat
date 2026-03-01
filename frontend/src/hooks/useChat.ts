@@ -61,10 +61,24 @@ export function useChat() {
 
   const loadConversation = useCallback((conv: Conversation) => {
     setActiveId(conv.id);
+    // Migrate legacy conversations: move top-level citations to last assistant message
+    let messages = conv.messages;
+    if (conv.citations && conv.citations.length > 0) {
+      const lastAssistantIdx = messages.findLastIndex(
+        (m) => m.role === "assistant"
+      );
+      if (lastAssistantIdx !== -1 && !messages[lastAssistantIdx].citations) {
+        messages = messages.map((m, i) =>
+          i === lastAssistantIdx
+            ? { ...m, citations: conv.citations }
+            : m
+        );
+      }
+    }
     setState({
       isLoading: false,
-      messages: conv.messages,
-      citations: conv.citations,
+      messages,
+      citations: [],
       planner: null,
       searchStatus: [],
       streamingContent: "",
@@ -94,6 +108,7 @@ export function useChat() {
 
       let fullContent = "";
       let finalCitations: CitationItem[] = [];
+      let searchUsed: boolean | undefined;
 
       await sseMessage(
         content,
@@ -103,6 +118,7 @@ export function useChat() {
         })),
         {
           onPlanner: (data) => {
+            searchUsed = data.needs_search;
             setState((prev) => ({ ...prev, planner: data }));
           },
           onSearching: (data) => {
@@ -134,6 +150,8 @@ export function useChat() {
             const assistantMessage: ChatMessage = {
               role: "assistant",
               content: fullContent,
+              searchUsed,
+              citations: finalCitations.length > 0 ? finalCitations : undefined,
             };
             const updatedMessages = [...currentMessages, assistantMessage];
 
@@ -157,7 +175,6 @@ export function useChat() {
                     ? {
                         ...c,
                         messages: updatedMessages,
-                        citations: finalCitations,
                       }
                     : c
                 );
@@ -167,7 +184,6 @@ export function useChat() {
                     id: currentId,
                     title,
                     messages: updatedMessages,
-                    citations: finalCitations,
                     createdAt: new Date().toISOString(),
                   },
                   ...prev,

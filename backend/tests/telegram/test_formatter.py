@@ -70,7 +70,38 @@ def test_format_final_message_with_citations():
 def test_format_final_message_without_citations():
     answer = "Hello! How can I help?"
     text = TelegramFormatter.format_final_message(answer, None)
+    assert answer in text
+
+
+def test_format_final_message_with_search_indicator():
+    answer = "TSMC stock is at $180."
+    text = TelegramFormatter.format_final_message(answer, None, needs_search=True)
+    assert text.startswith("🔍 Searched the web")
+    assert answer in text
+
+
+def test_format_final_message_without_search_indicator():
+    answer = "Hello! How can I help?"
+    text = TelegramFormatter.format_final_message(answer, None, needs_search=False)
+    assert text.startswith("💬 Answered directly")
+    assert answer in text
+
+
+def test_format_final_message_no_needs_search():
+    answer = "Hello! How can I help?"
+    text = TelegramFormatter.format_final_message(answer, None, needs_search=None)
     assert text == answer
+
+
+def test_format_final_message_search_with_citations():
+    answer = "TSMC stock is at $180 [1]."
+    citations = CitationsEvent(citations=[
+        {"index": 1, "title": "TSMC Stock", "url": "https://example.com/tsmc", "snippet": "..."},
+    ])
+    text = TelegramFormatter.format_final_message(answer, citations, needs_search=True)
+    assert text.startswith("🔍 Searched the web")
+    assert answer in text
+    assert "https://example.com/tsmc" in text
 
 
 def test_escape_markdown():

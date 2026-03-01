@@ -5,6 +5,7 @@ import { StreamingText } from "./StreamingText";
 import { AgentThinking } from "./AgentThinking";
 import { SearchProgress } from "./SearchProgress";
 import { CitationList } from "./CitationList";
+import { SearchBadge } from "./SearchBadge";
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -38,7 +39,10 @@ export function MessageBubble({
           <p className="text-sm whitespace-pre-wrap">{message.content}</p>
         ) : (
           <div>
-            {planner && <AgentThinking planner={planner} />}
+            {isStreaming && planner && <AgentThinking planner={planner} />}
+            {!isStreaming && message.searchUsed !== undefined && (
+              <SearchBadge searchUsed={message.searchUsed} />
+            )}
             {searchStatus.length > 0 && (
               <SearchProgress searches={searchStatus} />
             )}

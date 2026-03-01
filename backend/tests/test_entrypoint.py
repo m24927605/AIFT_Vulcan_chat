@@ -21,6 +21,8 @@ def test_entrypoint_mode_all():
 
 
 def test_entrypoint_default_mode():
-    with patch.dict("os.environ", {}, clear=True):
+    with patch.dict("os.environ", {}, clear=True), \
+         patch("app.entrypoint.settings") as mock_settings:
+        mock_settings.mode = "web"
         from app.entrypoint import get_mode
         assert get_mode() == "web"

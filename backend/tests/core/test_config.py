@@ -3,7 +3,7 @@ from app.core.config import Settings
 
 
 def test_telegram_settings_have_defaults():
-    s = Settings(openai_api_key="k", tavily_api_key="k")
+    s = Settings(openai_api_key="k", tavily_api_key="k", _env_file=None)
     assert s.telegram_bot_token == ""
     assert s.telegram_admin_ids == []
     assert s.mode == "web"

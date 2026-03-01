@@ -38,6 +38,7 @@ class ChatHandler:
 
         full_text = ""
         citations_event = None
+        needs_search = None
         last_edit_time = 0.0
         last_edit_len = 0
 
@@ -45,6 +46,7 @@ class ChatHandler:
             async for event in self._chat_service.process_message(message=message_text):
                 match event:
                     case PlannerEvent():
+                        needs_search = event.needs_search
                         status_text = TelegramFormatter.format_planner(event)
                         await status_msg.edit_text(status_text)
 
@@ -72,7 +74,7 @@ class ChatHandler:
                     case DoneEvent():
                         pass
 
-            final_text = TelegramFormatter.format_final_message(full_text, citations_event)
+            final_text = TelegramFormatter.format_final_message(full_text, citations_event, needs_search)
             try:
                 await status_msg.edit_text(final_text)
             except Exception:

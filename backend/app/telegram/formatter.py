@@ -35,8 +35,18 @@ class TelegramFormatter:
         return "\n".join(lines)
 
     @staticmethod
-    def format_final_message(answer: str, citations: CitationsEvent | None) -> str:
+    def format_final_message(
+        answer: str,
+        citations: CitationsEvent | None,
+        needs_search: bool | None = None,
+    ) -> str:
+        parts = []
+        if needs_search is True:
+            parts.append("🔍 Searched the web")
+        elif needs_search is False:
+            parts.append("💬 Answered directly")
+        parts.append(answer)
         if citations and citations.citations:
             citation_text = TelegramFormatter.format_citations(citations)
-            return f"{answer}\n{citation_text}"
-        return answer
+            parts.append(citation_text)
+        return "\n".join(parts)

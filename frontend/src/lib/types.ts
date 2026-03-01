@@ -1,6 +1,8 @@
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  searchUsed?: boolean;
+  citations?: CitationItem[];
 }
 
 export interface PlannerData {
@@ -43,6 +45,6 @@ export interface Conversation {
   id: string;
   title: string;
   messages: ChatMessage[];
-  citations: CitationItem[];
+  citations?: CitationItem[];
   createdAt: string;
 }

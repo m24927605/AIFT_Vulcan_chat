@@ -54,7 +54,7 @@ export function ChatPanel({
               message={msg}
               isStreaming={isAssistantStreaming}
               streamingContent={isAssistantStreaming ? streamingContent : undefined}
-              citations={isLast && msg.role === "assistant" ? citations : []}
+              citations={msg.role === "assistant" ? (msg.citations || []) : []}
             />
           );
         })}

@@ -87,3 +87,25 @@ async def test_chat_handler_with_citations(handler, mock_chat_service):
 
     status_msg = update.message.reply_text.return_value
     status_msg.edit_text.assert_called()
+    # Verify final message includes search indicator
+    last_call_text = status_msg.edit_text.call_args[0][0]
+    assert "🔍 Searched the web" in last_call_text
+
+
+@pytest.mark.asyncio
+async def test_chat_handler_no_search_indicator(handler, mock_chat_service):
+    async def mock_process(message, history=None):
+        yield PlannerEvent(needs_search=False, reasoning="general", search_queries=[], query_type="conversational")
+        yield ChunkEvent(content="Hi there!")
+        yield DoneEvent()
+
+    mock_chat_service.process_message = mock_process
+
+    update = _make_update("Hello")
+    context = MagicMock()
+
+    await handler.handle(update, context)
+
+    status_msg = update.message.reply_text.return_value
+    last_call_text = status_msg.edit_text.call_args[0][0]
+    assert "💬 Answered directly" in last_call_text
