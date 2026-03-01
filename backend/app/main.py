@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.core.exceptions import ChatError, chat_error_handler
+from app.api.routes import chat, health
 
 
 def create_app() -> FastAPI:
@@ -17,6 +18,9 @@ def create_app() -> FastAPI:
     )
 
     app.add_exception_handler(ChatError, chat_error_handler)
+
+    app.include_router(health.router)
+    app.include_router(chat.router)
 
     return app
 
