@@ -76,6 +76,12 @@ export function useChat() {
       const userMessage: ChatMessage = { role: "user", content };
       const currentMessages = [...state.messages, userMessage];
 
+      let currentId = activeId;
+      if (!currentId) {
+        currentId = uuidv4();
+        setActiveId(currentId);
+      }
+
       setState((prev) => ({
         ...prev,
         messages: currentMessages,
@@ -88,7 +94,6 @@ export function useChat() {
 
       let fullContent = "";
       let finalCitations: CitationItem[] = [];
-      const currentId = activeId || newChat();
 
       await sseMessage(
         content,
