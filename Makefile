@@ -1,4 +1,4 @@
-.PHONY: help setup-backend run-backend test-backend setup-frontend run-frontend test-frontend run-telegram run-all test-telegram
+.PHONY: help setup-backend run-backend test-backend setup-frontend run-frontend test-frontend run-telegram run-all test-telegram run-dev
 
 help:
 	@echo "Available targets:"
@@ -8,6 +8,7 @@ help:
 	@echo "  setup-frontend  - Install frontend deps"
 	@echo "  run-frontend    - Run Next.js dev server"
 	@echo "  test-frontend   - Run frontend tests"
+	@echo "  run-dev         - Run everything (backend + telegram + frontend)"
 
 setup-backend:
 	cd backend && python3 -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"
@@ -35,3 +36,9 @@ run-all:
 
 test-telegram:
 	cd backend && . .venv/bin/activate && python -m pytest tests/telegram/ -v
+
+run-dev:
+	@echo "Starting backend (web + telegram) and frontend..."
+	@cd backend && . .venv/bin/activate && MODE=all python -m app.entrypoint &
+	@cd frontend && npm run dev &
+	@wait
