@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { useSSE } from "./useSSE";
 import type {
@@ -22,11 +22,14 @@ interface ChatState {
 
 export function useChat() {
   const { sendMessage: sseMessage, abort } = useSSE();
-  const [conversations, setConversations] = useState<Conversation[]>(() => {
-    if (typeof window === "undefined") return [];
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+
+  useEffect(() => {
     const saved = localStorage.getItem("conversations");
-    return saved ? JSON.parse(saved) : [];
-  });
+    if (saved) {
+      setConversations(JSON.parse(saved));
+    }
+  }, []);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [state, setState] = useState<ChatState>({
     isLoading: false,
