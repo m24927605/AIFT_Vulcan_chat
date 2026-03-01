@@ -1,4 +1,4 @@
-.PHONY: help setup-backend run-backend test-backend setup-frontend run-frontend test-frontend
+.PHONY: help setup-backend run-backend test-backend setup-frontend run-frontend test-frontend run-telegram run-all test-telegram
 
 help:
 	@echo "Available targets:"
@@ -26,3 +26,12 @@ run-frontend:
 
 test-frontend:
 	cd frontend && npm test
+
+run-telegram:
+	cd backend && . .venv/bin/activate && MODE=telegram python -m app.entrypoint
+
+run-all:
+	cd backend && . .venv/bin/activate && MODE=all python -m app.entrypoint
+
+test-telegram:
+	cd backend && . .venv/bin/activate && python -m pytest tests/telegram/ -v
