@@ -1,38 +1,12 @@
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Query, Response
+from fastapi import APIRouter, Depends, Request, Query, Response
 
 from app.core.models.schemas import CreateConversationRequest
-from app.core.storage import ConversationStorage
 from app.core.web_session import ensure_web_session, verify_csrf
+from app.web.deps import get_storage, get_authorized_conversation
 
 router = APIRouter(prefix="/api/conversations", tags=["conversations"])
-
-
-def _get_storage(request: Request) -> ConversationStorage:
-    return request.app.state.conversation_storage
-
-
-async def _get_authorized_conversation(
-    storage: ConversationStorage,
-    conversation_id: str,
-    session_id: str,
-) -> dict:
-    conv = await storage.get_conversation(conversation_id)
-    if not conv:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-    owner = conv.get("web_owner_session_id")
-    if owner is None:
-        claimed = await storage.claim_conversation_owner_if_unset(
-            conversation_id, session_id
-        )
-        if claimed:
-            conv = await storage.get_conversation(conversation_id)
-            if conv:
-                return conv
-    if conv.get("web_owner_session_id") != session_id:
-        raise HTTPException(status_code=403, detail="Forbidden")
-    return conv
 
 
 @router.get("")
@@ -41,7 +15,7 @@ async def list_conversations(
     response: Response,
     ids: str | None = Query(None, description="Comma-separated conversation IDs to filter"),
 ):
-    storage = _get_storage(request)
+    storage = get_storage(request)
     session_id = await ensure_web_session(request, response, storage)
     session = await storage.get_web_session(session_id)
     session_tg = session.get("telegram_chat_id") if session else None
@@ -67,7 +41,7 @@ async def list_conversations(
 
 @router.post("")
 async def create_conversation(request: Request, response: Response, body: CreateConversationRequest, _csrf: None = Depends(verify_csrf)):
-    storage = _get_storage(request)
+    storage = get_storage(request)
     session_id = await ensure_web_session(request, response, storage)
     session = await storage.get_web_session(session_id)
     session_tg = session.get("telegram_chat_id") if session else None
@@ -91,9 +65,9 @@ async def get_conversation(
     response: Response,
     conversation_id: str,
 ):
-    storage = _get_storage(request)
+    storage = get_storage(request)
     session_id = await ensure_web_session(request, response, storage)
-    conv = await _get_authorized_conversation(storage, conversation_id, session_id)
+    conv = await get_authorized_conversation(storage, conversation_id, session_id)
     return {
         "id": conv["id"],
         "telegram_chat_id": conv["telegram_chat_id"],
@@ -109,9 +83,9 @@ async def delete_conversation(
     conversation_id: str,
     _csrf: None = Depends(verify_csrf),
 ):
-    storage = _get_storage(request)
+    storage = get_storage(request)
     session_id = await ensure_web_session(request, response, storage)
-    await _get_authorized_conversation(storage, conversation_id, session_id)
+    await get_authorized_conversation(storage, conversation_id, session_id)
     deleted = await storage.delete_conversation(conversation_id)
     if not deleted:  # pragma: no cover
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -125,9 +99,9 @@ async def get_messages(
     conversation_id: str,
     after_id: int | None = Query(None),
 ):
-    storage = _get_storage(request)
+    storage = get_storage(request)
     session_id = await ensure_web_session(request, response, storage)
-    await _get_authorized_conversation(storage, conversation_id, session_id)
+    await get_authorized_conversation(storage, conversation_id, session_id)
     return await storage.get_messages(conversation_id, after_id=after_id)
 
 
@@ -138,9 +112,9 @@ async def request_telegram_link_code(
     conversation_id: str,
     _csrf: None = Depends(verify_csrf),
 ):
-    storage = _get_storage(request)
+    storage = get_storage(request)
     session_id = await ensure_web_session(request, response, storage)
-    await _get_authorized_conversation(storage, conversation_id, session_id)
+    await get_authorized_conversation(storage, conversation_id, session_id)
     code = await storage.create_telegram_link_code(
         conversation_id=conversation_id,
         web_owner_session_id=session_id,
@@ -159,8 +133,8 @@ async def unlink_telegram(
     conversation_id: str,
     _csrf: None = Depends(verify_csrf),
 ):
-    storage = _get_storage(request)
+    storage = get_storage(request)
     session_id = await ensure_web_session(request, response, storage)
-    await _get_authorized_conversation(storage, conversation_id, session_id)
+    await get_authorized_conversation(storage, conversation_id, session_id)
     await storage.unlink_telegram_session(session_id)
     return {"status": "unlinked"}

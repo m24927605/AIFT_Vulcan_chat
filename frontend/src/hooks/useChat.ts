@@ -30,6 +30,42 @@ interface ChatState {
 
 const POLL_INTERVAL = 3000;
 
+const INITIAL_CHAT_STATE: ChatState = {
+  isLoading: false,
+  messages: [],
+  citations: [],
+  planner: null,
+  searchStatus: [],
+  streamingContent: "",
+};
+
+function mapApiMessage(m: {
+  id: number;
+  role: string;
+  content: string;
+  source: string;
+  search_used: boolean | null;
+  citations: CitationItem[] | null;
+}): ChatMessage {
+  return {
+    role: m.role as "user" | "assistant",
+    content: m.content,
+    source: m.source as "web" | "telegram",
+    id: m.id,
+    searchUsed: m.search_used ?? undefined,
+    citations: m.citations ?? undefined,
+  };
+}
+
+function updateMaxId(
+  ref: React.MutableRefObject<number>,
+  msgs: { id: number }[],
+) {
+  if (msgs.length > 0) {
+    ref.current = Math.max(...msgs.map((m) => m.id));
+  }
+}
+
 export function useChat() {
   const { sendMessage: sseMessage, abort } = useSSE();
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -48,14 +84,7 @@ export function useChat() {
   }, []);
   const maxMessageIdRef = useRef<number>(0);
   const persistedRef = useRef(false); // tracks if activeId conversation exists on backend
-  const [state, setState] = useState<ChatState>({
-    isLoading: false,
-    messages: [],
-    citations: [],
-    planner: null,
-    searchStatus: [],
-    streamingContent: "",
-  });
+  const [state, setState] = useState<ChatState>(INITIAL_CHAT_STATE);
   const isLoadingRef = useRef(false);
 
   // Keep refs in sync
@@ -97,18 +126,8 @@ export function useChat() {
             persistedRef.current = true;
             try {
               const msgs = await fetchMessages(restoreId, undefined);
-              const mappedMsgs: ChatMessage[] = msgs.map((m) => ({
-                role: m.role as "user" | "assistant",
-                content: m.content,
-                source: m.source as "web" | "telegram",
-                id: m.id,
-                searchUsed: m.search_used ?? undefined,
-                citations: m.citations ?? undefined,
-              }));
-              if (msgs.length > 0) {
-                maxMessageIdRef.current = Math.max(...msgs.map((m) => m.id));
-              }
-              setState((prev) => ({ ...prev, messages: mappedMsgs }));
+              updateMaxId(maxMessageIdRef, msgs);
+              setState((prev) => ({ ...prev, messages: msgs.map(mapApiMessage) }));
             } catch (err) {
               console.error("Failed to restore conversation messages:", err);
             }
@@ -120,25 +139,19 @@ export function useChat() {
   }, []);
 
   // Polling for new messages (picks up Telegram messages)
+  // Pauses when tab is hidden to avoid unnecessary requests
   useEffect(() => {
-    const interval = setInterval(async () => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const poll = async () => {
       const convId = activeIdRef.current;
       if (!convId || isLoadingRef.current || !persistedRef.current) return;
 
       try {
         const newMsgs = await fetchMessages(convId, maxMessageIdRef.current || undefined);
         if (newMsgs.length > 0 && activeIdRef.current === convId) {
-          const newMaxId = Math.max(...newMsgs.map((m) => m.id));
-          maxMessageIdRef.current = newMaxId;
-
-          const mapped: ChatMessage[] = newMsgs.map((m) => ({
-            role: m.role as "user" | "assistant",
-            content: m.content,
-            source: m.source as "web" | "telegram",
-            id: m.id,
-            searchUsed: m.search_used ?? undefined,
-            citations: m.citations ?? undefined,
-          }));
+          updateMaxId(maxMessageIdRef, newMsgs);
+          const mapped = newMsgs.map(mapApiMessage);
 
           setState((prev) => {
             // Deduplicate by message ID
@@ -153,12 +166,52 @@ export function useChat() {
       } catch {
         // polling errors are non-critical
       }
-    }, POLL_INTERVAL);
+    };
 
-    return () => clearInterval(interval);
+    const startPolling = () => {
+      if (!interval) interval = setInterval(poll, POLL_INTERVAL);
+    };
+
+    const stopPolling = () => {
+      if (interval) {
+        clearInterval(interval);
+        interval = null;
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        stopPolling();
+      } else {
+        startPolling();
+      }
+    };
+
+    startPolling();
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      stopPolling();
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, []);
 
   const linkPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const linkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup link polling on unmount
+  useEffect(() => {
+    return () => {
+      if (linkPollRef.current) {
+        clearInterval(linkPollRef.current);
+        linkPollRef.current = null;
+      }
+      if (linkTimeoutRef.current) {
+        clearTimeout(linkTimeoutRef.current);
+        linkTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const requestTelegramLink = useCallback(async () => {
     let convId = activeIdRef.current;
@@ -180,6 +233,7 @@ export function useChat() {
         );
         // Poll for link completion until session telegram_chat_id is set
         if (linkPollRef.current) clearInterval(linkPollRef.current);
+        if (linkTimeoutRef.current) clearTimeout(linkTimeoutRef.current);
         linkPollRef.current = setInterval(async () => {
           try {
             const result = await fetchConversations();
@@ -200,12 +254,13 @@ export function useChat() {
             // polling errors are non-critical
           }
         }, POLL_INTERVAL);
-        // Stop polling after 10 minutes (code expires)
-        setTimeout(() => {
+        // Stop polling after code expires
+        linkTimeoutRef.current = setTimeout(() => {
           if (linkPollRef.current) {
             clearInterval(linkPollRef.current);
             linkPollRef.current = null;
           }
+          linkTimeoutRef.current = null;
         }, result.expires_in_seconds * 1000);
       })
       .catch((err) => console.error("Telegram link request failed:", err));
@@ -231,14 +286,7 @@ export function useChat() {
     setActiveId(id);
     maxMessageIdRef.current = 0;
     persistedRef.current = false;
-    setState({
-      isLoading: false,
-      messages: [],
-      citations: [],
-      planner: null,
-      searchStatus: [],
-      streamingContent: "",
-    });
+    setState(INITIAL_CHAT_STATE);
     return id;
   }, []);
 
@@ -249,35 +297,11 @@ export function useChat() {
 
     try {
       const msgs = await fetchMessages(conv.id, undefined);
-      const mapped: ChatMessage[] = msgs.map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-        source: m.source as "web" | "telegram",
-        id: m.id,
-        searchUsed: m.search_used ?? undefined,
-        citations: m.citations ?? undefined,
-      }));
-      if (msgs.length > 0) {
-        maxMessageIdRef.current = Math.max(...msgs.map((m) => m.id));
-      }
-      setState({
-        isLoading: false,
-        messages: mapped,
-        citations: [],
-        planner: null,
-        searchStatus: [],
-        streamingContent: "",
-      });
+      updateMaxId(maxMessageIdRef, msgs);
+      setState({ ...INITIAL_CHAT_STATE, messages: msgs.map(mapApiMessage) });
     } catch (err) {
       console.error("Failed to load messages:", err);
-      setState({
-        isLoading: false,
-        messages: [],
-        citations: [],
-        planner: null,
-        searchStatus: [],
-        streamingContent: "",
-      });
+      setState(INITIAL_CHAT_STATE);
     }
   }, []);
 
@@ -374,21 +398,13 @@ export function useChat() {
               source: "web",
             };
 
-            // Refresh all messages from backend to get correct IDs
-            fetchMessages(currentId!, undefined).then((msgs) => {
+            // Fetch only new messages from backend to get correct IDs
+            fetchMessages(currentId!, maxMessageIdRef.current || undefined).then((msgs) => {
               if (msgs.length > 0) {
-                maxMessageIdRef.current = Math.max(...msgs.map((m) => m.id));
-                const mapped: ChatMessage[] = msgs.map((m) => ({
-                  role: m.role as "user" | "assistant",
-                  content: m.content,
-                  source: m.source as "web" | "telegram",
-                  id: m.id,
-                  searchUsed: m.search_used ?? undefined,
-                  citations: m.citations ?? undefined,
-                }));
+                updateMaxId(maxMessageIdRef, msgs);
                 setState((prev) => ({
                   ...prev,
-                  messages: mapped,
+                  messages: [...prev.messages.filter((m) => m.id != null), ...msgs.map(mapApiMessage)],
                   isLoading: false,
                   streamingContent: "",
                 }));
@@ -462,14 +478,7 @@ export function useChat() {
         setActiveId(null);
         maxMessageIdRef.current = 0;
         persistedRef.current = false;
-        setState({
-          isLoading: false,
-          messages: [],
-          citations: [],
-          planner: null,
-          searchStatus: [],
-          streamingContent: "",
-        });
+        setState(INITIAL_CHAT_STATE);
       }
     },
     [activeId]

@@ -29,10 +29,13 @@ def test_notify_sends_message(client):
 
 
 def test_notify_rejects_empty_message(client):
-    response = client.post("/api/notify", json={
-        "chat_id": 123,
-        "message": "",
-    }, headers={"X-API-Key": "any"})
+    with patch("app.core.auth.settings") as mock_settings:
+        mock_settings.api_secret_key = ""
+        mock_settings.frontend_url = "http://localhost:3000"
+        response = client.post("/api/notify", json={
+            "chat_id": 123,
+            "message": "",
+        }, headers={"X-API-Key": "any"})
     assert response.status_code == 422
 
 

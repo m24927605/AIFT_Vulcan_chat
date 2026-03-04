@@ -11,8 +11,8 @@ from app.core.config import settings
 from app.core.models.schemas import ChatRequest
 from app.core.services.chat_service import ChatService
 from app.core.services.llm_factory import create_llm_client
-from app.core.storage import ConversationStorage
 from app.core.web_session import ensure_web_session, verify_csrf
+from app.web.deps import get_storage, get_authorized_conversation
 from app.core.models.events import (
     PlannerEvent,
     SearchingEvent,
@@ -104,24 +104,13 @@ async def chat(
     _csrf: None = Depends(verify_csrf),
 ):
     service = get_chat_service()
-    storage: ConversationStorage = raw_request.app.state.conversation_storage
+    storage = get_storage(raw_request)
     session_id = await ensure_web_session(raw_request, response, storage)
     conversation_id = request.conversation_id
 
+    conv = None
     if conversation_id:
-        conv = await storage.get_conversation(conversation_id)
-        if not conv:
-            raise HTTPException(status_code=404, detail="Conversation not found")
-        if conv.get("web_owner_session_id") is None:
-            claimed = await storage.claim_conversation_owner_if_unset(
-                conversation_id, session_id
-            )
-            if claimed:
-                conv = await storage.get_conversation(conversation_id)
-                if not conv:
-                    raise HTTPException(status_code=404, detail="Conversation not found")
-        if conv.get("web_owner_session_id") != session_id:
-            raise HTTPException(status_code=403, detail="Forbidden")
+        conv = await get_authorized_conversation(storage, conversation_id, session_id)
 
     # If conversation_id provided, load history from DB
     if conversation_id:
@@ -181,7 +170,6 @@ async def chat(
             )
 
             # Push to Telegram if linked
-            conv = await storage.get_conversation(conversation_id)
             if conv and conv.get("telegram_chat_id"):
                 asyncio.create_task(
                     _push_to_telegram(

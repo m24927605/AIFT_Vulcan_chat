@@ -36,29 +36,6 @@ def _is_secure(request: Request) -> bool:
     return request.url.scheme == "https"
 
 
-def _set_cookie(request: Request, response: Response, session_id: str) -> None:
-    samesite = _cookie_samesite(request)
-    response.set_cookie(
-        key=SESSION_COOKIE_NAME,
-        value=session_id,
-        httponly=True,
-        secure=_is_secure(request),
-        samesite=samesite,
-        max_age=SESSION_TTL_SECONDS,
-        path="/",
-    )
-    csrf_token = request.cookies.get(CSRF_COOKIE_NAME) or secrets.token_urlsafe(32)
-    response.set_cookie(
-        key=CSRF_COOKIE_NAME,
-        value=csrf_token,
-        httponly=False,
-        secure=_is_secure(request),
-        samesite=samesite,
-        max_age=SESSION_TTL_SECONDS,
-        path="/",
-    )
-
-
 def _cookie_samesite(request: Request) -> str:
     origin = request.headers.get("origin")
     if not origin:
@@ -70,20 +47,35 @@ def _cookie_samesite(request: Request) -> str:
     return "lax"
 
 
-def _ensure_csrf_cookie(request: Request, response: Response) -> None:
-    """Set the CSRF cookie if the browser doesn't have one yet."""
-    if request.cookies.get(CSRF_COOKIE_NAME):
+def _set_csrf_cookie(
+    request: Request, response: Response, *, force: bool = False,
+) -> None:
+    existing = request.cookies.get(CSRF_COOKIE_NAME)
+    if existing and not force:
         return
-    samesite = _cookie_samesite(request)
     response.set_cookie(
         key=CSRF_COOKIE_NAME,
-        value=secrets.token_urlsafe(32),
+        value=existing or secrets.token_urlsafe(32),
         httponly=False,
+        secure=_is_secure(request),
+        samesite=_cookie_samesite(request),
+        max_age=SESSION_TTL_SECONDS,
+        path="/",
+    )
+
+
+def _set_cookie(request: Request, response: Response, session_id: str) -> None:
+    samesite = _cookie_samesite(request)
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=session_id,
+        httponly=True,
         secure=_is_secure(request),
         samesite=samesite,
         max_age=SESSION_TTL_SECONDS,
         path="/",
     )
+    _set_csrf_cookie(request, response, force=True)
 
 
 async def verify_csrf(request: Request) -> None:
@@ -126,7 +118,7 @@ async def ensure_web_session(
                 _set_cookie(request, response, new_session)
                 return new_session
             await storage.touch_web_session(existing)
-            _ensure_csrf_cookie(request, response)
+            _set_csrf_cookie(request, response)
             return existing
 
     session_id = secrets.token_urlsafe(32)
