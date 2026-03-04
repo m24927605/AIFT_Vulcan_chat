@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+:root {
+  --background: #111827;
+  --foreground: #f3f4f6;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #374151;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #4b5563;
+}
+
+/* Prevent horizontal overflow on mobile */
+html, body {
+  overflow-x: hidden;
+}
+
+/* Markdown prose overrides */
+.prose pre {
+  background: #1f2937;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+}
+
+.prose code {
+  color: #93c5fd;
+  background: #1f2937;
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  word-break: break-all;
+}
+
+.prose {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.prose table {
+  display: block;
+  overflow-x: auto;
+}
+
+.prose a {
+  color: #60a5fa;
+}
+
+.prose a:hover {
+  color: #93c5fd;
+}
