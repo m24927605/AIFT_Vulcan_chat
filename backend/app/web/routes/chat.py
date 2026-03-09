@@ -19,6 +19,7 @@ from app.core.models.events import (
     ChunkEvent,
     CitationsEvent,
     SearchFailedEvent,
+    VerificationEvent,
     DoneEvent,
 )
 from app.telegram.formatter import TelegramFormatter
@@ -49,6 +50,8 @@ def _event_to_sse(event) -> dict:
             return {"event": "citations", "data": {"citations": event.citations}}
         case SearchFailedEvent():
             return {"event": "search_failed", "data": {"message": event.message}}
+        case VerificationEvent():
+            return {"event": "verification", "data": {"is_consistent": event.is_consistent, "confidence": event.confidence, "issues": event.issues, "suggestion": event.suggestion}}
         case DoneEvent():
             return {"event": "done", "data": {}}
 

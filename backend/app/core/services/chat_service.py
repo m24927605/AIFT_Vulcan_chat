@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator
 
 from app.core.agents.planner import PlannerAgent
 from app.core.agents.executor import ExecutorAgent
+from app.core.agents.verifier import VerifierAgent
 from app.core.security import guard_model_output, normalize_search_results, sanitize_search_results
 from app.core.services.llm_client import LLMClient
 from app.core.services.search_service import SearchService
@@ -19,6 +20,7 @@ from app.core.models.events import (
     ChunkEvent,
     CitationsEvent,
     SearchFailedEvent,
+    VerificationEvent,
     DoneEvent,
 )
 
@@ -50,6 +52,7 @@ class ChatService:
     ):
         self._planner = PlannerAgent(llm=llm)
         self._executor = ExecutorAgent(llm=llm)
+        self._verifier = VerifierAgent(llm=llm)
         self._search = SearchService(api_key=tavily_api_key)
         self._fugle = FugleService(api_key=fugle_api_key) if fugle_api_key else None
         self._finnhub = FinnhubService(api_key=finnhub_api_key) if finnhub_api_key else None
@@ -136,12 +139,30 @@ class ChatService:
             )
 
         # Step 3: Executor generates answer
+        answer_chunks = []
         async for chunk in self._executor.execute(
             message=message,
             search_results=normalized_results,
             history=history,
         ):
-            yield ChunkEvent(content=guard_model_output(chunk))
+            guarded = guard_model_output(chunk)
+            answer_chunks.append(guarded)
+            yield ChunkEvent(content=guarded)
+
+        # Step 3.5: Verify answer against sources (only when search was used)
+        if normalized_results:
+            full_answer = "".join(answer_chunks)
+            verification = await self._verifier.verify(
+                query=message,
+                answer=full_answer,
+                search_results=normalized_results,
+            )
+            yield VerificationEvent(
+                is_consistent=verification.is_consistent,
+                confidence=verification.confidence,
+                issues=verification.issues,
+                suggestion=verification.suggestion,
+            )
 
         # Step 4: Send citations
         if all_results:

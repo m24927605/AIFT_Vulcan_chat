@@ -663,3 +663,104 @@ async def test_chat_service_redacts_secret_like_output(chat_service):
         assert chunk_events
         assert chunk_events[0].content == guard_model_output("token sk-1234567890abcdefghijklmnop")
         assert "sk-" not in chunk_events[0].content
+
+
+from app.core.models.events import VerificationEvent
+
+
+@pytest.mark.asyncio
+async def test_chat_service_runs_verifier_after_search(chat_service):
+    from unittest.mock import MagicMock as MM
+
+    planner_decision = PlannerDecision(
+        needs_search=True,
+        reasoning="Need info",
+        search_queries=["TSMC stock"],
+        query_type="temporal",
+    )
+    search_results = [
+        SearchResult(
+            title="TSMC Stock",
+            url="https://example.com",
+            content="TSMC is at $180",
+            score=0.9,
+        )
+    ]
+
+    async def mock_execute(*args, **kwargs):
+        for chunk in ["TSMC is $180 [1]"]:
+            yield chunk
+
+    with (
+        patch.object(
+            chat_service._planner,
+            "plan",
+            new_callable=AsyncMock,
+            return_value=planner_decision,
+        ),
+        patch.object(
+            chat_service._search,
+            "search_multiple",
+            new_callable=AsyncMock,
+            return_value=search_results,
+        ),
+        patch.object(
+            chat_service._executor, "execute", side_effect=mock_execute
+        ),
+        patch.object(
+            chat_service._executor, "build_citations", return_value=[]
+        ),
+        patch.object(
+            chat_service._verifier,
+            "verify",
+            new_callable=AsyncMock,
+            return_value=MM(
+                is_consistent=True, confidence=0.95, issues=[], suggestion=""
+            ),
+        ),
+    ):
+        events = []
+        async for event in chat_service.process_message("TSMC stock?"):
+            events.append(event)
+
+        verification_events = [
+            e for e in events if isinstance(e, VerificationEvent)
+        ]
+        assert len(verification_events) == 1
+        assert verification_events[0].is_consistent is True
+
+
+@pytest.mark.asyncio
+async def test_chat_service_skips_verifier_when_no_search(chat_service):
+    planner_decision = PlannerDecision(
+        needs_search=False,
+        reasoning="General knowledge",
+        search_queries=[],
+        query_type="conversational",
+    )
+
+    async def mock_execute(*args, **kwargs):
+        yield "Hello!"
+
+    with (
+        patch.object(
+            chat_service._planner,
+            "plan",
+            new_callable=AsyncMock,
+            return_value=planner_decision,
+        ),
+        patch.object(
+            chat_service._executor, "execute", side_effect=mock_execute
+        ),
+        patch.object(
+            chat_service._executor, "build_citations", return_value=[]
+        ),
+    ):
+        events = []
+        async for event in chat_service.process_message("Explain recursion"):
+            events.append(event)
+
+        verification_events = [
+            e for e in events if isinstance(e, VerificationEvent)
+        ]
+        assert len(verification_events) == 0

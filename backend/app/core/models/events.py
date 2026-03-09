@@ -32,8 +32,16 @@ class SearchFailedEvent:
 
 
 @dataclass
+class VerificationEvent:
+    is_consistent: bool
+    confidence: float
+    issues: list[str]
+    suggestion: str
+
+
+@dataclass
 class DoneEvent:
     pass
 
 
-ChatEvent = PlannerEvent | SearchingEvent | ChunkEvent | CitationsEvent | SearchFailedEvent | DoneEvent
+ChatEvent = PlannerEvent | SearchingEvent | ChunkEvent | CitationsEvent | SearchFailedEvent | VerificationEvent | DoneEvent
