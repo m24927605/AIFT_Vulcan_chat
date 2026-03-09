@@ -235,3 +235,35 @@ class TestUnlinkTelegramSession:
         assert session["telegram_chat_id"] is None
         assert (await storage.get_conversation("c1"))["telegram_chat_id"] is None
         assert (await storage.get_conversation("c2"))["telegram_chat_id"] is None
+
+
+class TestTaskOwnership:
+    """Task ownership persisted in DB, survives restart."""
+
+    @pytest.fixture
+    async def storage(self, tmp_path):
+        db_path = str(tmp_path / "test_task_ownership.db")
+        s = ConversationStorage(db_path=db_path)
+        await s.initialize()
+        yield s
+        await s.close()
+
+    async def test_set_and_get_task_owner(self, storage):
+        await storage.set_task_owner("task-1", "session-a")
+        assert await storage.get_task_owner("task-1") == "session-a"
+
+    async def test_unknown_task_returns_none(self, storage):
+        assert await storage.get_task_owner("nonexistent") is None
+
+    async def test_ownership_persists_across_reconnect(self, tmp_path):
+        """Simulates process restart: close DB, reopen, ownership still there."""
+        db_path = str(tmp_path / "test_restart.db")
+        s1 = ConversationStorage(db_path=db_path)
+        await s1.initialize()
+        await s1.set_task_owner("task-x", "session-owner")
+        await s1.close()
+
+        s2 = ConversationStorage(db_path=db_path)
+        await s2.initialize()
+        assert await s2.get_task_owner("task-x") == "session-owner"
+        await s2.close()

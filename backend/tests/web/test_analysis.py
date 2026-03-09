@@ -15,6 +15,8 @@ _DEFAULT_SESSION = {
 _CSRF_HEADERS = {"X-CSRF-Token": "t"}
 _CSRF_COOKIES = {"csrf_token": "t"}
 
+_FIXED_SESSION_ID = "fixed-session-for-tests"
+
 
 @pytest.fixture
 def client():
@@ -22,17 +24,30 @@ def client():
     app.include_router(analysis.router)
     storage = AsyncMock()
     storage.get_web_session.return_value = _DEFAULT_SESSION
+    # Default: no task owner found (deny by default)
+    storage.get_task_owner.return_value = None
     app.state.conversation_storage = storage
     with TestClient(app, cookies=_CSRF_COOKIES) as c:
-        yield c
+        yield c, storage
+
+
+def _patch_session():
+    """Patch ensure_web_session to return a deterministic session ID."""
+    return patch(
+        "app.web.routes.analysis.ensure_web_session",
+        new_callable=AsyncMock,
+        return_value=_FIXED_SESSION_ID,
+    )
 
 
 def test_submit_analysis_returns_task_id(client):
+    c, storage = client
     mock_task = MagicMock()
     mock_task.id = "test-task-id-123"
-    with patch("app.web.routes.analysis.deep_analysis_task") as mock:
+    with _patch_session(), \
+         patch("app.web.routes.analysis.deep_analysis_task") as mock:
         mock.delay.return_value = mock_task
-        response = client.post(
+        response = c.post(
             "/api/analysis",
             json={"query": "Analyze TSMC revenue trends", "max_rounds": 2},
             headers=_CSRF_HEADERS,
@@ -41,11 +56,15 @@ def test_submit_analysis_returns_task_id(client):
     data = response.json()
     assert data["task_id"] == "test-task-id-123"
     assert data["status"] == "pending"
+    storage.set_task_owner.assert_awaited_once_with(
+        "test-task-id-123", _FIXED_SESSION_ID
+    )
 
 
 def test_submit_analysis_rejected_without_csrf(client):
     """POST without CSRF token should be rejected."""
-    response = client.post(
+    c, _ = client
+    response = c.post(
         "/api/analysis",
         json={"query": "Analyze TSMC revenue trends", "max_rounds": 2},
         headers={"Origin": "https://evil.com"},
@@ -53,19 +72,27 @@ def test_submit_analysis_rejected_without_csrf(client):
     assert response.status_code == 403
 
 
-def test_get_analysis_status_pending(client):
-    with patch("app.web.routes.analysis.celery_app") as mock_celery:
+def test_get_analysis_status_owned_by_session(client):
+    """Session that owns the task can read its status."""
+    c, storage = client
+    storage.get_task_owner.return_value = _FIXED_SESSION_ID
+    with _patch_session(), \
+         patch("app.web.routes.analysis.celery_app") as mock_celery:
         mock_result = MagicMock()
         mock_result.state = "PENDING"
         mock_result.info = None
         mock_celery.AsyncResult.return_value = mock_result
-        response = client.get("/api/analysis/unknown-task-id")
+        response = c.get("/api/analysis/my-task")
     assert response.status_code == 200
     assert response.json()["status"] == "PENDING"
 
 
 def test_get_analysis_status_completed(client):
-    with patch("app.web.routes.analysis.celery_app") as mock_celery:
+    """Owned task with SUCCESS state returns result."""
+    c, storage = client
+    storage.get_task_owner.return_value = _FIXED_SESSION_ID
+    with _patch_session(), \
+         patch("app.web.routes.analysis.celery_app") as mock_celery:
         mock_result = MagicMock()
         mock_result.state = "SUCCESS"
         mock_result.result = {
@@ -74,7 +101,7 @@ def test_get_analysis_status_completed(client):
             "rounds": 2,
         }
         mock_celery.AsyncResult.return_value = mock_result
-        response = client.get("/api/analysis/unknown-task-id")
+        response = c.get("/api/analysis/completed-task")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "SUCCESS"
@@ -82,7 +109,8 @@ def test_get_analysis_status_completed(client):
 
 
 def test_submit_analysis_validates_query_length(client):
-    response = client.post(
+    c, _ = client
+    response = c.post(
         "/api/analysis",
         json={"query": "", "max_rounds": 2},
         headers=_CSRF_HEADERS,
@@ -90,16 +118,21 @@ def test_submit_analysis_validates_query_length(client):
     assert response.status_code == 422
 
 
+def test_get_analysis_unknown_task_returns_403(client):
+    """Task ID not in storage (unknown, restart, cross-instance) → 403."""
+    c, storage = client
+    storage.get_task_owner.return_value = None
+    with _patch_session(), \
+         patch("app.web.routes.analysis.celery_app"):
+        response = c.get("/api/analysis/unknown-task-id")
+    assert response.status_code == 403
+
+
 def test_get_analysis_task_forbidden_for_other_session(client):
     """A different session should not be able to read another session's task."""
-    analysis._task_owners["owned-task-id"] = "other-session-id"
-    try:
-        with patch("app.web.routes.analysis.celery_app") as mock_celery:
-            mock_result = MagicMock()
-            mock_result.state = "SUCCESS"
-            mock_result.result = {"answer": "secret"}
-            mock_celery.AsyncResult.return_value = mock_result
-            response = client.get("/api/analysis/owned-task-id")
-        assert response.status_code == 403
-    finally:
-        analysis._task_owners.pop("owned-task-id", None)
+    c, storage = client
+    storage.get_task_owner.return_value = "other-session-id"
+    with _patch_session(), \
+         patch("app.web.routes.analysis.celery_app"):
+        response = c.get("/api/analysis/owned-task-id")
+    assert response.status_code == 403

@@ -80,6 +80,13 @@ class ConversationStorage:
                 hit_at REAL NOT NULL
             )
         """)
+        await self._db.execute("""
+            CREATE TABLE IF NOT EXISTS task_ownership (
+                task_id TEXT PRIMARY KEY,
+                owner_session_id TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            )
+        """)
         await self._db.execute(
             "CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id, id)"
         )
@@ -461,6 +468,23 @@ class ConversationStorage:
         await self.db.commit()
         conv = await self.get_conversation(conv_id)
         return conv
+
+    async def set_task_owner(self, task_id: str, owner_session_id: str) -> None:
+        now = int(time.time())
+        await self.db.execute(
+            "INSERT OR REPLACE INTO task_ownership (task_id, owner_session_id, created_at) "
+            "VALUES (?, ?, ?)",
+            (task_id, owner_session_id, now),
+        )
+        await self.db.commit()
+
+    async def get_task_owner(self, task_id: str) -> str | None:
+        cur = await self.db.execute(
+            "SELECT owner_session_id FROM task_ownership WHERE task_id = ?",
+            (task_id,),
+        )
+        row = await cur.fetchone()
+        return row[0] if row else None
 
     async def check_rate_limit(
         self,

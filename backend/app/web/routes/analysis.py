@@ -11,11 +11,6 @@ from app.web.deps import get_storage
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 
-# In-memory mapping of task_id → session_id for ownership checks.
-# In production this should be persisted (e.g. Redis or DB), but for
-# demo scope an in-process dict is sufficient.
-_task_owners: dict[str, str] = {}
-
 
 class AnalysisRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=4000)
@@ -43,7 +38,7 @@ async def submit_analysis(
     storage = get_storage(request)
     session_id = await ensure_web_session(request, response, storage)
     task = deep_analysis_task.delay(query=body.query, max_rounds=body.max_rounds)
-    _task_owners[task.id] = session_id
+    await storage.set_task_owner(task.id, session_id)
     return AnalysisSubmitResponse(task_id=task.id)
 
 
@@ -55,8 +50,8 @@ async def get_analysis_status(
 ):
     storage = get_storage(request)
     session_id = await ensure_web_session(request, response, storage)
-    owner = _task_owners.get(task_id)
-    if owner is not None and owner != session_id:
+    owner = await storage.get_task_owner(task_id)
+    if owner != session_id:
         raise HTTPException(status_code=403, detail="Forbidden")
     result = celery_app.AsyncResult(task_id)
     return AnalysisStatusResponse(
