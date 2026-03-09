@@ -51,6 +51,26 @@ class SearchResult(BaseModel):
     score: float = 0.0
 
 
+class ExtractedFact(BaseModel):
+    text: str = Field(..., min_length=1, max_length=300)
+
+
+class ExtractedNumber(BaseModel):
+    label: str = Field(..., min_length=1, max_length=80)
+    value: str = Field(..., min_length=1, max_length=80)
+
+
+class NormalizedSearchResult(BaseModel):
+    source_kind: str = Field(..., pattern="^(web|market_data|ai_summary)$")
+    title: str = Field(..., min_length=1, max_length=300)
+    url: str = Field(default="")
+    publisher: str = Field(default="", max_length=120)
+    published_at: str = Field(default="", max_length=40)
+    excerpt: str = Field(default="", max_length=600)
+    facts: list[ExtractedFact] = Field(default_factory=list, max_length=5)
+    numbers: list[ExtractedNumber] = Field(default_factory=list, max_length=8)
+
+
 class CreateConversationRequest(BaseModel):
     id: str | None = Field(None, pattern=r"^[0-9a-f\-]{36}$")
     title: str = Field(..., min_length=1, max_length=200)

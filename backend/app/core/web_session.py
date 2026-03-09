@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 from fastapi import HTTPException, Request, Response
 
 from app.core.storage import ConversationStorage
+from app.core.config import settings
 
 SESSION_COOKIE_NAME = "vulcan_session"
 SESSION_TTL_SECONDS = 60 * 60 * 24 * 30
@@ -47,6 +48,17 @@ def _cookie_samesite(request: Request) -> str:
     return "lax"
 
 
+def _normalized_origin(url: str) -> str:
+    parsed = urlparse(url)
+    scheme = parsed.scheme.lower()
+    host = (parsed.hostname or "").lower()
+    port = parsed.port
+    default_port = 443 if scheme == "https" else 80
+    if port and port != default_port:
+        return f"{scheme}://{host}:{port}"
+    return f"{scheme}://{host}"
+
+
 def _set_csrf_cookie(
     request: Request, response: Response, *, force: bool = False,
 ) -> None:
@@ -79,6 +91,10 @@ def _set_cookie(request: Request, response: Response, session_id: str) -> None:
 
 
 async def verify_csrf(request: Request) -> None:
+    origin = request.headers.get("origin")
+    if origin and _normalized_origin(origin) != _normalized_origin(settings.frontend_url):
+        raise HTTPException(status_code=403, detail="Origin not allowed")
+
     header_token = request.headers.get("x-csrf-token", "")
     cookie_token = request.cookies.get(CSRF_COOKIE_NAME, "")
     if not header_token or not cookie_token:
@@ -104,6 +120,7 @@ async def ensure_web_session(
             and record["revoked_at"] is None
             and record["expires_at"] >= now
             and record["ua_hash"] == ua_hash
+            and record["ip_prefix"] == ip_prefix
         ):
             session_age = now - record["created_at"]
             if session_age >= SESSION_ROTATE_SECONDS:

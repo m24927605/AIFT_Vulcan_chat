@@ -20,7 +20,9 @@
 │             │                          │  │     ↓ FugleQuote            │   │
 │             │                          │  │  3c. Finnhub Service (US+)  │   │
 │             │                          │  │     ↓ FinnhubSource         │   │
-│             │                          │  │  4. Executor Agent           │   │
+│             │                          │  │  4. Security Normalizer      │   │
+│             │                          │  │     ↓ NormalizedSearchResult│   │
+│             │                          │  │  5. Executor Agent           │   │
 │             │                          │  │     ↓ SSE stream            │   │
 └─────────────┘                          │  │                              │   │
                                          │  │  LLMClient (primary+fallback)│   │
@@ -43,8 +45,9 @@ A user asks **"台積電今天股價多少？"** (What is TSMC's stock price tod
 | 2 | **Planner Agent** | Analyzes query → `{ needs_search: true, query_type: "temporal", search_queries: ["TSMC stock price today", "台積電 股價"] }` |
 | 3 | **Deterministic Pre-check** | Confirms: "股價" matches temporal pattern → no override needed (Planner already correct) |
 | 4 | **Search Service** | Executes 2 Tavily queries in parallel → returns 8 deduplicated results |
-| 5 | **Executor Agent** | Synthesizes answer from search results → streams tokens via SSE with `[1]`, `[2]` citation markers |
-| 6 | **Frontend** | Renders streaming text + planner thinking + search progress + citation cards |
+| 5 | **Security Normalizer** | Sanitizes external results, extracts constrained schema fields (`excerpt`, `facts`, `numbers`, metadata), and strips prompt-injection patterns before LLM synthesis |
+| 6 | **Executor Agent** | Synthesizes answer from normalized results → streams tokens via SSE with `[1]`, `[2]` citation markers |
+| 7 | **Frontend** | Renders streaming text + planner thinking + search progress + citation cards |
 
 If the conversation is linked to Telegram, the backend also pushes the complete response (with formatted citations) to the linked Telegram chat. Multiple web conversations can link to the same Telegram chat — messages from Telegram are synced to all linked conversations.
 
@@ -118,11 +121,16 @@ LLMClient (Protocol)
 | Session cookie + session table | `localStorage` conversation tokens | `HttpOnly` cookie keeps auth material out of browser JS; server enforces owner checks |
 | One-to-many Telegram sync | One-to-one (UNIQUE) | Multiple conversations can link to the same Telegram chat; messages sync to all linked conversations across browsers |
 | Anonymous web sessions (`web_sessions`) | No per-conversation auth | Owner-bound access control without login/signup; includes UA/IP binding + periodic rotation |
+| CSRF token + `Origin` verification | Cookie session without CSRF | Prevents cross-site state-changing requests in cross-origin deployment |
+| Security headers middleware | No browser hardening headers | Adds `HSTS`, `X-Frame-Options`, `nosniff`, `Referrer-Policy`, and `Permissions-Policy` |
+| Schema extraction before Executor | Pass raw search text directly to LLM | Reduces prompt-injection surface while preserving useful facts, numbers, and source metadata |
+| Secret-egress output guard | Trust raw model output | Redacts secret-like values before streaming them back to users |
+| Secret-redacted logging | Raw exception strings in logs | Reduces the chance of Telegram/API credential leakage through server logs |
 | Telegram OTP linking (`telegram_link_codes`) | Direct `link-telegram` by chat ID | Prevents accidental/malicious mis-linking by requiring Telegram-side possession proof (`/start` -> `Start Linking` numeric keypad or `/link <code>`) |
 | 2-Agent (Planner+Executor) over single agent | Single LLM call with tools | Separation of concerns: Planner optimizes search decision, Executor optimizes answer quality |
 | Deterministic pre-check | Trust LLM fully | Safety net for must-search temporal queries; hybrid approach preserves flexibility |
 | Request ID tracing | No tracing | Every request gets a unique ID propagated through all log messages for debugging |
-| IP-based rate limiting | No rate limiting | Protects `/api/chat` from abuse (30 req/min per IP); non-chat routes unaffected |
+| Storage-backed IP rate limiting | In-memory limiter only | Protects `/api/chat` from abuse with shared SQLite-backed enforcement across compatible app instances |
 | Telegram retry with backoff | Fire-and-forget | 3 attempts with exponential backoff (1s, 2s, 4s) for transient network failures |
 | LLM fallback (OpenAI→Anthropic) | Single provider | Eliminates single-point-of-failure; auto-switches on timeout/429/5xx |
 | Tavily `include_answer` | Raw results only | Tavily's AI-generated answer is injected as result `[1]`, improving numerical accuracy for temporal queries (stock prices, exchange rates) |

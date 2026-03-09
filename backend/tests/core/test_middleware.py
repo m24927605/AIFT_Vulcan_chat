@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from app.core.middleware import (
     RequestLoggingMiddleware,
     RateLimitMiddleware,
+    SecretRedactionFilter,
     request_id_var,
     RequestIDFilter,
     setup_logging,
@@ -49,6 +50,32 @@ class TestRequestIDFilter:
         f.filter(record)
         assert record.request_id == "test-123"
         request_id_var.reset(token)
+
+
+class TestSecretRedactionFilter:
+    def test_redacts_telegram_token_in_message(self):
+        import logging
+
+        f = SecretRedactionFilter()
+        record = logging.LogRecord(
+            "test", logging.ERROR, "", 0,
+            "Telegram failed for token 123456789:AAABCDEFGHIJKLMNOPQRSTUV",
+            (), None,
+        )
+        assert f.filter(record)
+        assert "123456789:AAABCDEFGHIJKLMNOPQRSTUV" not in record.msg
+        assert "[REDACTED]" in record.msg
+
+    def test_redacts_secret_in_args(self):
+        import logging
+
+        f = SecretRedactionFilter()
+        record = logging.LogRecord(
+            "test", logging.ERROR, "", 0,
+            "Error: %s", ("authorization: Bearer secret-token-value",), None,
+        )
+        assert f.filter(record)
+        assert "secret-token-value" not in record.args[0]
 
 
 class TestRequestLoggingMiddleware:
@@ -100,6 +127,30 @@ class TestRateLimitMiddleware:
         # Attempt to bypass by spoofing a different IP
         resp = client.post("/api/chat", headers={"X-Forwarded-For": "1.2.3.4"})
         assert resp.status_code == 429
+
+    @pytest.mark.asyncio
+    async def test_storage_backed_rate_limit(self):
+        from unittest.mock import AsyncMock
+        from fastapi import FastAPI
+
+        app = FastAPI()
+
+        @app.post("/api/chat")
+        async def chat_endpoint():
+            return {"ok": True}
+
+        storage = AsyncMock()
+        storage.check_rate_limit = AsyncMock(side_effect=[(True, 1), (False, 1)])
+        app.state.conversation_storage = storage
+        app.add_middleware(RateLimitMiddleware, max_requests=1, window_seconds=60)
+        client = TestClient(app)
+
+        ok = client.post("/api/chat")
+        blocked = client.post("/api/chat")
+
+        assert ok.status_code == 200
+        assert blocked.status_code == 429
+        assert storage.check_rate_limit.await_count == 2
 
 
 class TestSetupLogging:

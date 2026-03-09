@@ -3,6 +3,7 @@ Request middleware: logging, request ID tracing, rate limiting.
 """
 
 import logging
+import re
 import sys
 import time
 import uuid
@@ -17,6 +18,18 @@ from starlette.responses import JSONResponse, Response
 
 request_id_var: ContextVar[str] = ContextVar("request_id", default="-")
 
+_SECRET_LOG_PATTERNS = [
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in [
+        r"\b\d{8,10}:[A-Za-z0-9_-]{20,}\b",  # Telegram bot token
+        r"sk-[A-Za-z0-9_-]{20,}",
+        r"sess-[A-Za-z0-9_-]{16,}",
+        r"authorization\s*:\s*bearer\s+\S+",
+        r"api[_ -]?key\s*[:=]\s*\S+",
+    ]
+]
+_LOG_REDACTION = "[REDACTED]"
+
 
 class RequestIDFilter(logging.Filter):
     """Inject request_id into every log record."""
@@ -26,12 +39,40 @@ class RequestIDFilter(logging.Filter):
         return True
 
 
+class SecretRedactionFilter(logging.Filter):
+    """Redact common secret patterns from log messages and args."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str):
+            record.msg = _redact_secrets(record.msg)
+        if record.args:
+            if isinstance(record.args, dict):
+                record.args = {k: _redact_arg(v) for k, v in record.args.items()}
+            else:
+                record.args = tuple(_redact_arg(arg) for arg in record.args)
+        return True
+
+
+def _redact_secrets(value: str) -> str:
+    redacted = value
+    for pattern in _SECRET_LOG_PATTERNS:
+        redacted = pattern.sub(_LOG_REDACTION, redacted)
+    return redacted
+
+
+def _redact_arg(value):
+    if isinstance(value, str):
+        return _redact_secrets(value)
+    return value
+
+
 def setup_logging() -> None:
     """Configure structured logging with request ID."""
     fmt = "%(asctime)s %(levelname)-5s [%(request_id)s] %(name)s – %(message)s"
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(logging.Formatter(fmt, datefmt="%Y-%m-%d %H:%M:%S"))
     handler.addFilter(RequestIDFilter())
+    handler.addFilter(SecretRedactionFilter())
 
     root = logging.getLogger()
     root.handlers.clear()
@@ -105,15 +146,35 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if request.url.path != "/api/chat":
             return await call_next(request)
 
-        # Periodic cleanup (every 100 requests)
+        ip = self._client_ip(request)
+        now = time.monotonic()
+        storage = getattr(request.app.state, "conversation_storage", None)
+        check_rate_limit = getattr(storage, "check_rate_limit", None)
+        if storage is not None and callable(check_rate_limit):
+            result = await check_rate_limit(
+                bucket="chat",
+                key=ip,
+                now=now,
+                window_seconds=self._window,
+                max_requests=self._max,
+            )
+            if isinstance(result, tuple) and len(result) == 2:
+                allowed, _count = result
+                if not allowed:
+                    logger.warning("Rate limit exceeded for %s", ip)
+                    return JSONResponse(
+                        status_code=429,
+                        content={"error": "Too many requests. Please try again later."},
+                        headers={"Retry-After": str(self._window)},
+                    )
+                return await call_next(request)
+
+        # Fallback for tests or apps without initialized storage.
         if sum(len(v) for v in self._hits.values()) > 1000:
             self._cleanup_stale()
 
-        ip = self._client_ip(request)
-        now = time.monotonic()
         cutoff = now - self._window
         self._hits[ip] = [t for t in self._hits[ip] if t > cutoff]
-
         if len(self._hits[ip]) >= self._max:
             logger.warning("Rate limit exceeded for %s", ip)
             return JSONResponse(
@@ -121,6 +182,22 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 content={"error": "Too many requests. Please try again later."},
                 headers={"Retry-After": str(self._window)},
             )
-
         self._hits[ip].append(now)
         return await call_next(request)
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add baseline API/browser security headers."""
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        if request.url.scheme == "https" or request.headers.get("x-forwarded-proto", "").lower() == "https":
+            response.headers.setdefault(
+                "Strict-Transport-Security",
+                "max-age=31536000; includeSubDomains",
+            )
+        return response

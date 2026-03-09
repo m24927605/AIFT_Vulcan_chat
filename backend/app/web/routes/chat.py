@@ -151,10 +151,10 @@ async def chat(
                     full_content += event.content
 
         except Exception as e:
-            logger.error(f"Chat stream error: {e}")
+            logger.error("Chat stream error (%s)", type(e).__name__)
             yield {
                 "event": "error",
-                "data": json.dumps({"message": str(e)}),
+                "data": json.dumps({"message": "Internal server error"}),
             }
             return
 

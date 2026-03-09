@@ -142,5 +142,5 @@ class ChatHandler:
                     )
 
         except Exception as e:
-            logger.error(f"Chat handler error: {e}")
-            await status_msg.edit_text(f"❌ 發生錯誤: {str(e)}")
+            logger.error("Chat handler error (%s)", type(e).__name__)
+            await status_msg.edit_text("❌ 發生錯誤，請稍後再試。")

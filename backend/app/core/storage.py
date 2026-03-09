@@ -73,6 +73,13 @@ class ConversationStorage:
                 created_at INTEGER NOT NULL
             )
         """)
+        await self._db.execute("""
+            CREATE TABLE IF NOT EXISTS rate_limit_hits (
+                bucket TEXT NOT NULL,
+                key TEXT NOT NULL,
+                hit_at REAL NOT NULL
+            )
+        """)
         await self._db.execute(
             "CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id, id)"
         )
@@ -97,6 +104,9 @@ class ConversationStorage:
         )
         await self._db.execute(
             "CREATE INDEX IF NOT EXISTS idx_tg_link_code_hash ON telegram_link_codes(code_hash)"
+        )
+        await self._db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_rate_limit_hits_bucket_key_hit_at ON rate_limit_hits(bucket, key, hit_at)"
         )
         await self._db.commit()
 
@@ -451,3 +461,32 @@ class ConversationStorage:
         await self.db.commit()
         conv = await self.get_conversation(conv_id)
         return conv
+
+    async def check_rate_limit(
+        self,
+        *,
+        bucket: str,
+        key: str,
+        now: float,
+        window_seconds: int,
+        max_requests: int,
+    ) -> tuple[bool, int]:
+        cutoff = now - window_seconds
+        await self.db.execute(
+            "DELETE FROM rate_limit_hits WHERE hit_at <= ?",
+            (cutoff,),
+        )
+        cur = await self.db.execute(
+            "SELECT COUNT(*) FROM rate_limit_hits WHERE bucket = ? AND key = ? AND hit_at > ?",
+            (bucket, key, cutoff),
+        )
+        count = (await cur.fetchone())[0]
+        if count >= max_requests:
+            await self.db.commit()
+            return False, count
+        await self.db.execute(
+            "INSERT INTO rate_limit_hits (bucket, key, hit_at) VALUES (?, ?, ?)",
+            (bucket, key, now),
+        )
+        await self.db.commit()
+        return True, count + 1

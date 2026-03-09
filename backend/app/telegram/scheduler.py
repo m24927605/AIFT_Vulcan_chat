@@ -64,8 +64,11 @@ class DigestScheduler:
                 text=f"📰 {topic} 摘要\n\n{full_text}",
             )
         except Exception as e:
-            logger.error(f"Digest delivery failed for {chat_id}/{topic}: {e}")
+            logger.error(
+                "Digest delivery failed for %s/%s (%s)",
+                chat_id, topic, type(e).__name__,
+            )
             await self._bot.send_message(
                 chat_id=chat_id,
-                text=f"❌ 「{topic}」摘要產生時發生錯誤: {str(e)}",
+                text=f"❌ 「{topic}」摘要產生時發生錯誤，請稍後再試。",
             )

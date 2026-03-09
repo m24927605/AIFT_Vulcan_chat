@@ -1,8 +1,8 @@
-# Web Search Chatbot
+# Vulcan Chatbot
 
 > **Live Demo**: [https://vulcanchat.xyz](https://vulcanchat.xyz)
 
-A web search chatbot powered by a 2-Agent AI architecture that intelligently searches the web and provides answers with cited sources. Supports both web UI and Telegram bot with bidirectional message sync.
+A web search chatbot for Vulcan, a cybersecurity company, powered by a 2-Agent AI architecture that intelligently searches the web and provides answers with cited sources. Supports both web UI and Telegram bot with bidirectional message sync.
 
 ## Architecture
 
@@ -56,8 +56,16 @@ The pre-check uses regex pattern matching on temporal keywords (e.g., `股價`, 
 - Dark mode
 - LLM fallback: auto-switches to Anthropic on OpenAI timeout/429/5xx
 - Structured logging with request ID tracing
-- Rate limiting (IP-based, /api/chat)
+- Rate limiting (`/api/chat`, storage-backed for cross-instance consistency)
 - Enhanced health check with dependency status
+- Anonymous `HttpOnly` web sessions with server-side ownership checks
+- CSRF protection with double-submit token and `Origin` validation
+- Session binding to user-agent hash + IP prefix with periodic rotation
+- Baseline browser security headers (`HSTS`, `X-Frame-Options`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`)
+- LLM prompt-injection hardening for user history and external search results
+- Schema extraction for external search/tool results before executor prompting
+- Sensitive-output redaction guard for secret-like tokens and credentials
+- Secret redaction in server logs for Telegram bot tokens, bearer tokens, and API-key-like values
 
 ## Tech Stack
 
@@ -178,6 +186,28 @@ No per-conversation token is exposed to the frontend.
 | POST | `/api/notify` | Send notification via Telegram |
 | POST | `/api/notify/broadcast` | Broadcast to all subscribers |
 
+## Security Controls
+
+The current implementation includes multiple defensive layers across browser, API, session, Telegram-linking, and LLM paths:
+
+- Web conversations are protected by server-managed `HttpOnly` sessions stored in `web_sessions`, not browser-managed auth tokens.
+- Session reuse is bound to both user-agent hash and IP prefix, and sessions rotate periodically.
+- State-changing web routes require a CSRF header/cookie match and reject unexpected `Origin` values.
+- Admin notification endpoints require `X-API-Key` backed by `API_SECRET_KEY`.
+- Telegram linking requires a one-time 8-digit code with expiry, attempt limits, and Telegram-side possession proof.
+- `/api/chat` rate limiting is enforced server-side and persisted in SQLite, so limits remain effective across process restarts and multiple app instances sharing the same database.
+- API responses send baseline browser hardening headers to reduce clickjacking, MIME sniffing, and downgrade risk.
+- Search results are treated as untrusted input. Before the Executor sees them, they are sanitized and normalized into a constrained schema (`source_kind`, `title`, `publisher`, `published_at`, `excerpt`, `facts`, `numbers`) rather than passing arbitrary raw page text.
+- LLM prompts explicitly forbid following instructions embedded in search results, citations, or conversation content.
+- Model output is passed through a secret-egress guard that redacts secret-like tokens such as API keys, bearer tokens, and session-like values.
+- Server logging applies secret redaction filters so accidental exception strings do not emit Telegram bot tokens, bearer tokens, or API-key-like values in plain text.
+
+### Security Notes
+
+- `API_SECRET_KEY` is required in production. If it is empty outside local development, the web server refuses to start.
+- Anonymous sessions provide owner isolation for browser conversations, but they are not a substitute for full user-account authentication.
+- Schema extraction reduces prompt-injection risk significantly, but it is still a pragmatic control, not formal information-flow isolation.
+
 ### GET /api/health
 
 Health check endpoint with dependency status.
@@ -194,10 +224,10 @@ Health check endpoint with dependency status.
 ## Testing
 
 ```bash
-# Backend tests (184 tests: unit + integration + E2E, all mocked, no API keys needed)
+# Backend tests (unit + integration + E2E, all mocked, no API keys needed)
 make test-backend
 
-# Frontend tests (17 tests: unit + integration)
+# Frontend tests (unit + integration)
 make test-frontend
 
 # Browser E2E tests (Playwright, requires dev server)
@@ -246,7 +276,7 @@ Push to main ──┬── Backend Tests (pytest, ≥90 test gate) ──┬�
 | `MODE` | Run mode: `web`, `telegram`, or `all` | No |
 | `DATA_DIR` | Directory for SQLite databases | No |
 | `FRONTEND_URL` | Frontend URL for CORS | No |
-| `API_SECRET_KEY` | Protects `/api/notify` endpoints and Telegram link-code hashing | For production |
+| `API_SECRET_KEY` | Protects `/api/notify` endpoints, Telegram link-code hashing, and production web auth boot validation | For production |
 
 ### Frontend (.env.local)
 

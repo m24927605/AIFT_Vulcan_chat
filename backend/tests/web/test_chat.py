@@ -69,3 +69,20 @@ def test_chat_returns_sse_stream(client):
                 events.append(json.loads(line[6:]))
 
         assert len(events) >= 2
+
+
+def test_chat_rejects_cross_origin_request(client):
+    response = client.post(
+        "/api/chat",
+        json={"message": "Hi there"},
+        headers={"X-CSRF-Token": "t", "Origin": "https://evil.example"},
+        cookies={"csrf_token": "t"},
+    )
+    assert response.status_code == 403
+
+
+def test_health_sets_security_headers(client):
+    response = client.get("/api/health")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"

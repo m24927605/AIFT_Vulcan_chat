@@ -3,6 +3,7 @@ from fastapi import HTTPException
 from starlette.requests import Request
 from urllib.parse import urlparse
 
+from app.core.config import settings
 from app.core.web_session import CSRF_COOKIE_NAME, _cookie_samesite, _is_secure, verify_csrf
 
 
@@ -79,9 +80,25 @@ async def test_verify_csrf_passes_with_matching_token():
         extra_headers=[
             (b"x-csrf-token", b"abc123"),
             (b"cookie", b"csrf_token=abc123"),
+            (b"origin", settings.frontend_url.encode()),
         ],
     )
     await verify_csrf(req)
+
+
+@pytest.mark.anyio
+async def test_verify_csrf_rejects_unexpected_origin():
+    req = _make_request(
+        "http://localhost:8000",
+        extra_headers=[
+            (b"x-csrf-token", b"abc123"),
+            (b"cookie", b"csrf_token=abc123"),
+            (b"origin", b"https://evil.example"),
+        ],
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await verify_csrf(req)
+    assert exc_info.value.status_code == 403
 
 
 @pytest.mark.anyio

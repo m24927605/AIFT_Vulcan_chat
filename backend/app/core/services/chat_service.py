@@ -5,6 +5,7 @@ from collections.abc import AsyncGenerator
 
 from app.core.agents.planner import PlannerAgent
 from app.core.agents.executor import ExecutorAgent
+from app.core.security import guard_model_output, normalize_search_results, sanitize_search_results
 from app.core.services.llm_client import LLMClient
 from app.core.services.search_service import SearchService
 from app.core.services.fugle_service import FugleService
@@ -91,6 +92,8 @@ class ChatService:
             data_results = await self._fetch_data_sources(decision.data_sources)
 
         all_results = data_results + search_results
+        all_results = sanitize_search_results(all_results)
+        normalized_results = normalize_search_results(all_results)
 
         # Step 2.5: Warn if search was needed but returned nothing
         search_failed = decision.needs_search and not all_results
@@ -103,10 +106,10 @@ class ChatService:
         # Step 3: Executor generates answer
         async for chunk in self._executor.execute(
             message=message,
-            search_results=all_results,
+            search_results=normalized_results,
             history=history,
         ):
-            yield ChunkEvent(content=chunk)
+            yield ChunkEvent(content=guard_model_output(chunk))
 
         # Step 4: Send citations
         if all_results:

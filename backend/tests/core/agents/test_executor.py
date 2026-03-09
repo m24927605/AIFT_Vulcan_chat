@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
 from app.core.agents.executor import ExecutorAgent
-from app.core.models.schemas import SearchResult, Citation
+from app.core.models.schemas import NormalizedSearchResult, SearchResult, Citation, ExtractedFact, ExtractedNumber
 
 
 @pytest.fixture
@@ -36,9 +36,25 @@ def sample_search_results():
     ]
 
 
+@pytest.fixture
+def normalized_search_results():
+    return [
+        NormalizedSearchResult(
+            source_kind="web",
+            title="TSMC Stock",
+            url="https://example.com/tsmc",
+            publisher="Reuters",
+            published_at="2026-03-08",
+            excerpt="TSMC stock is at $180 after earnings.",
+            facts=[ExtractedFact(text="TSMC stock is at $180 after earnings.")],
+            numbers=[ExtractedNumber(label="value_1", value="$180")],
+        )
+    ]
+
+
 @pytest.mark.asyncio
 async def test_executor_streams_answer_with_search_results(
-    executor, mock_llm, sample_search_results
+    executor, mock_llm, normalized_search_results
 ):
     async def mock_stream(*args, **kwargs):
         for text in ["TSMC ", "is at ", "$180 [1]"]:
@@ -48,7 +64,7 @@ async def test_executor_streams_answer_with_search_results(
     chunks = []
     async for chunk in executor.execute(
         message="What is TSMC stock price?",
-        search_results=sample_search_results,
+        search_results=normalized_search_results,
     ):
         chunks.append(chunk)
     assert len(chunks) == 3
@@ -93,3 +109,24 @@ def test_build_citations_excludes_tavily_answer(executor, sample_search_results)
     assert len(citations) == 2
     assert all(c.url for c in citations)
     assert citations[0].title == "TSMC Stock"
+
+
+def test_format_search_results_uses_structured_untrusted_blocks(executor, sample_search_results):
+    normalized = [
+        NormalizedSearchResult(
+            source_kind="web",
+            title="TSMC Stock",
+            url="https://example.com/tsmc",
+            publisher="Reuters",
+            published_at="2026-03-08",
+            excerpt="TSMC stock is at $180.",
+            facts=[ExtractedFact(text="TSMC stock is at $180.")],
+            numbers=[ExtractedNumber(label="value_1", value="$180")],
+        )
+    ]
+    formatted = executor._format_search_results(normalized)
+    assert "<result index=\"1\">" in formatted
+    assert "<excerpt>" in formatted
+    assert "<facts>" in formatted
+    assert "<numbers>" in formatted
+    assert "URL:" not in formatted

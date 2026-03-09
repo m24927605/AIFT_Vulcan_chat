@@ -56,6 +56,6 @@ async def broadcast(request: BroadcastRequest):
             await bot.send_message(chat_id=chat_id, text=request.message)
             sent_count += 1
         except Exception as e:
-            logger.error(f"Broadcast failed for {chat_id}: {e}")
+            logger.error("Broadcast failed for %s (%s)", chat_id, type(e).__name__)
 
     return {"sent_count": sent_count}

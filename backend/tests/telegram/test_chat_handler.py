@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+import logging
 
 from app.telegram.handlers.chat import ChatHandler
 from app.core.models.events import (
@@ -121,3 +122,22 @@ async def test_chat_handler_no_search_indicator(handler, mock_chat_service):
     status_msg = update.message.reply_text.return_value
     last_call_text = status_msg.edit_text.call_args[0][0]
     assert "💬 Answered directly" in last_call_text
+
+
+@pytest.mark.asyncio
+async def test_chat_handler_hides_internal_error_details(handler, mock_chat_service, caplog):
+    async def mock_process(message, history=None):
+        raise RuntimeError("telegram failed 123456789:AAABCDEFGHIJKLMNOPQRSTUV")
+        yield  # pragma: no cover
+
+    mock_chat_service.process_message = mock_process
+    update = _make_update("Hi")
+    context = MagicMock()
+
+    with caplog.at_level(logging.ERROR):
+        await handler.handle(update, context)
+
+    status_msg = update.message.reply_text.return_value
+    last_call_text = status_msg.edit_text.call_args[0][0]
+    assert "稍後再試" in last_call_text
+    assert "123456789:AAABCDEFGHIJKLMNOPQRSTUV" not in caplog.text

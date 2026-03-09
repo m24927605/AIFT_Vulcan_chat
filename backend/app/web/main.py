@@ -12,6 +12,7 @@ from app.core.exceptions import ChatError, chat_error_handler
 from app.core.middleware import (
     RateLimitMiddleware,
     RequestLoggingMiddleware,
+    SecurityHeadersMiddleware,
     setup_logging,
 )
 from app.core.storage import ConversationStorage
@@ -45,7 +46,7 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Vulcan Web Search Chatbot",
-        version="0.1.0",
+        version="0.1.3",
         lifespan=lifespan,
     )
 
@@ -58,6 +59,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.add_middleware(RequestLoggingMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RateLimitMiddleware, max_requests=30, window_seconds=60)
 
     app.add_exception_handler(ChatError, chat_error_handler)
