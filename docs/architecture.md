@@ -10,19 +10,21 @@
 │             │ ◀──────────────────────  │  │     Chat Service             │   │
 │  - React 19 │                          │  │     (Orchestrator)           │   │
 │  - Tailwind │     GET /api/conv/:id    │  │                              │   │
-│  - SSE      │ ──────────────────────── │  │  1. Planner Agent             │   │
-│             │                          │  │     ↓ PlannerDecision        │   │
-└─────────────┘                          │  │  2. Deterministic Pre-check  │   │
-                                         │  │     ↓ override if temporal   │   │
-┌─────────────┐                          │  │  3. Search Service (Tavily)  │   │
-│  Telegram   │   python-telegram-bot    │  │     ↓ SearchResult[]        │   │
-│  Bot        │ ◀──────────────────────▶ │  │  3b. Fugle Service (TW stk) │   │
+│  - SSE      │ ──────────────────────── │  │  1. Deterministic Fast-path   │   │
+│             │                          │  │     ↓ greeting / simple math │   │
+└─────────────┘                          │  │  2. Planner Agent             │   │
+                                         │  │     ↓ PlannerDecision        │   │
+┌─────────────┐                          │  │  3. Deterministic Pre-check  │   │
+│  Telegram   │   python-telegram-bot    │  │     ↓ override if temporal   │   │
+│  Bot        │ ◀──────────────────────▶ │  │  4. Search Service (Tavily)  │   │
+│             │                          │  │     ↓ SearchResult[]        │   │
+│             │                          │  │  4b. Fugle Service (TW stk) │   │
 │             │                          │  │     ↓ FugleQuote            │   │
-│             │                          │  │  3c. Finnhub Service (US+)  │   │
+│             │                          │  │  4c. Finnhub Service (US+)  │   │
 │             │                          │  │     ↓ FinnhubSource         │   │
-│             │                          │  │  4. Security Normalizer      │   │
+│             │                          │  │  5. Security Normalizer      │   │
 │             │                          │  │     ↓ NormalizedSearchResult│   │
-│             │                          │  │  5. Executor Agent           │   │
+│             │                          │  │  6. Executor Agent           │   │
 │             │                          │  │     ↓ SSE stream            │   │
 └─────────────┘                          │  │                              │   │
                                          │  │  LLMClient (primary+fallback)│   │
@@ -48,6 +50,12 @@ A user asks **"台積電今天股價多少？"** (What is TSMC's stock price tod
 | 5 | **Security Normalizer** | Sanitizes external results, extracts constrained schema fields (`excerpt`, `facts`, `numbers`, metadata), and strips prompt-injection patterns before LLM synthesis |
 | 6 | **Executor Agent** | Synthesizes answer from normalized results → streams tokens via SSE with `[1]`, `[2]` citation markers |
 | 7 | **Frontend** | Renders streaming text + planner thinking + search progress + citation cards |
+
+For low-risk inputs, the flow is shorter:
+
+- Greetings are answered by a deterministic fast-path without invoking the Planner.
+- Simple arithmetic is evaluated by a restricted AST-based evaluator without invoking search or LLM planning.
+- If planner JSON parsing fails for a low-risk query, the backend falls back to direct-answer mode instead of forcing web search.
 
 If the conversation is linked to Telegram, the backend also pushes the complete response (with formatted citations) to the linked Telegram chat. Multiple web conversations can link to the same Telegram chat — messages from Telegram are synced to all linked conversations.
 
@@ -126,6 +134,7 @@ LLMClient (Protocol)
 | Schema extraction before Executor | Pass raw search text directly to LLM | Reduces prompt-injection surface while preserving useful facts, numbers, and source metadata |
 | Secret-egress output guard | Trust raw model output | Redacts secret-like values before streaming them back to users |
 | Secret-redacted logging | Raw exception strings in logs | Reduces the chance of Telegram/API credential leakage through server logs |
+| Deterministic greeting / math fast-path | Send all low-risk queries through LLM planner | Improves stability for simple inputs and reduces unnecessary search/LLM surface area |
 | Telegram OTP linking (`telegram_link_codes`) | Direct `link-telegram` by chat ID | Prevents accidental/malicious mis-linking by requiring Telegram-side possession proof (`/start` -> `Start Linking` numeric keypad or `/link <code>`) |
 | 2-Agent (Planner+Executor) over single agent | Single LLM call with tools | Separation of concerns: Planner optimizes search decision, Executor optimizes answer quality |
 | Deterministic pre-check | Trust LLM fully | Safety net for must-search temporal queries; hybrid approach preserves flexibility |

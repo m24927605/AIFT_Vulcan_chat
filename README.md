@@ -33,13 +33,22 @@ User → Next.js Frontend → FastAPI Backend ←→ Telegram Bot
 
 ### Search Reliability: Deterministic Pre-check
 
-LLM-based planning is powerful but non-deterministic — the Planner may occasionally misjudge a time-sensitive query as not requiring search. To guarantee correctness for the assignment's core requirement (answering temporal questions like stock prices, news, exchange rates), a **rule-based safety net** sits after the Planner:
+LLM-based planning is powerful but non-deterministic — the Planner may occasionally misjudge a time-sensitive query as not requiring search. To guarantee correctness for temporal questions while keeping low-risk queries stable, the backend uses **deterministic fast-paths and safety nets** around the Planner:
 
 ```
-User Query → Planner Agent (LLM) → Deterministic Pre-check → Search / Direct Answer
+User Query → Deterministic Fast-path (greeting / simple math)
+          → Planner Agent (LLM)
+          → Deterministic Pre-check
+          → Search / Direct Answer
 ```
 
-The pre-check uses regex pattern matching on temporal keywords (e.g., `股價`, `新聞`, `匯率`, `latest`, `stock price`, `today`). It only activates when the Planner **incorrectly decides not to search** — it never overrides a correct "search" decision. This hybrid approach preserves the flexibility of LLM reasoning while ensuring 100% coverage of must-search scenarios.
+The deterministic layer does three things:
+
+- Answers greetings directly without invoking the Planner
+- Evaluates simple arithmetic expressions (for example `1+1`, `(2+3)*4`) via a restricted AST-based evaluator rather than LLM reasoning
+- Forces search for temporal keywords (e.g. `股價`, `新聞`, `匯率`, `latest`, `stock price`, `today`) when the Planner incorrectly says no-search
+
+In addition, if the Planner fails to parse its own JSON output, low-risk queries such as greetings and arithmetic fall back to direct-answer mode instead of being needlessly sent to search. This hybrid approach preserves LLM flexibility while reducing instability and unnecessary external calls.
 
 ### Key Features
 
@@ -66,6 +75,7 @@ The pre-check uses regex pattern matching on temporal keywords (e.g., `股價`, 
 - Schema extraction for external search/tool results before executor prompting
 - Sensitive-output redaction guard for secret-like tokens and credentials
 - Secret redaction in server logs for Telegram bot tokens, bearer tokens, and API-key-like values
+- Deterministic fast-paths for greetings and simple arithmetic to avoid unnecessary planner/search drift
 
 ## Tech Stack
 
@@ -201,6 +211,7 @@ The current implementation includes multiple defensive layers across browser, AP
 - LLM prompts explicitly forbid following instructions embedded in search results, citations, or conversation content.
 - Model output is passed through a secret-egress guard that redacts secret-like tokens such as API keys, bearer tokens, and session-like values.
 - Server logging applies secret redaction filters so accidental exception strings do not emit Telegram bot tokens, bearer tokens, or API-key-like values in plain text.
+- Greetings and simple arithmetic use deterministic handlers, which reduces prompt drift and avoids unnecessary exposure to external search or planner failure paths.
 
 ### Security Notes
 
@@ -306,7 +317,7 @@ These are explicitly out of scope for this project:
 | Area | Limitation | Mitigation | Priority | Exit Criteria |
 |------|-----------|------------|----------|---------------|
 | **Search source reliability** | Tavily results may include low-quality or outdated sources; the system does not verify factual accuracy | Fugle provides exchange-grade data for Taiwan stocks; Finnhub provides real-time data for US/global stocks and forex; Tavily `include_answer` provides a high-accuracy direct answer; Executor prompt enforces exact numerical quoting with per-source citations | P2 — partially mitigated | Add source credibility scoring; discard results below threshold |
-| **Planner misjudgment** | LLM-based planning is non-deterministic — edge cases may lead to incorrect search/no-search decisions | Deterministic pre-check overrides missed temporal queries; Planner defaults to search on parse failure | P1 — partially mitigated | Achieve <1% miss rate on a 500-query evaluation set covering temporal, factual, and conversational queries |
+| **Planner misjudgment** | LLM-based planning is non-deterministic — edge cases may lead to incorrect search/no-search decisions | Deterministic greeting/math fast-paths, temporal pre-check overrides missed searches, and low-risk parse-failure fallback avoids unnecessary search | P1 — partially mitigated | Achieve <1% miss rate on a 500-query evaluation set covering temporal, factual, and conversational queries |
 | **LLM fallback coverage** | Fallback triggers on timeout, connection error, 429, and 5xx; 4xx client errors are not retried | Primary/fallback is configurable via `PRIMARY_LLM`/`FALLBACK_LLM` env vars | P3 — mitigated | Add health-check routing and circuit breaker for sustained outages |
 | **SQLite scalability** | SQLite is single-writer; not suitable for high-concurrency production use | Sufficient for demo scope; storage abstraction allows migration | P2 | Migrate to PostgreSQL; verify ≥50 concurrent writers with no lock contention |
 | **Conversation context window** | Full conversation history is sent to both agents; long conversations may exceed token limits | Not yet implemented | P2 | Add sliding window (last N messages) + conversation summarization for older context |

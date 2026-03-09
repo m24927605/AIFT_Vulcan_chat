@@ -87,6 +87,83 @@ async def test_chat_stream_yields_chat_events_with_search(chat_service):
 
 
 @pytest.mark.asyncio
+async def test_simple_math_uses_deterministic_fast_path(chat_service):
+    events = []
+    async for event in chat_service.process_message("1+1"):
+        events.append(event)
+
+    assert isinstance(events[0], PlannerEvent)
+    assert events[0].needs_search is False
+    assert "Deterministic fast-path" in events[0].reasoning
+    chunk_events = [e for e in events if isinstance(e, ChunkEvent)]
+    assert len(chunk_events) == 1
+    assert chunk_events[0].content == "2"
+    assert isinstance(events[-1], DoneEvent)
+
+
+@pytest.mark.asyncio
+async def test_simple_math_fast_path_skips_planner(chat_service):
+    with patch.object(chat_service._planner, "plan", new_callable=AsyncMock) as mock_plan:
+        events = []
+        async for event in chat_service.process_message("(2 + 3) * 4"):
+            events.append(event)
+    mock_plan.assert_not_awaited()
+    chunk_events = [e for e in events if isinstance(e, ChunkEvent)]
+    assert chunk_events[0].content == "20"
+
+
+@pytest.mark.asyncio
+async def test_simple_math_accepts_question_suffix(chat_service):
+    events = []
+    async for event in chat_service.process_message("3+3=?"):
+        events.append(event)
+    chunk_events = [e for e in events if isinstance(e, ChunkEvent)]
+    assert chunk_events[0].content == "6"
+
+
+@pytest.mark.asyncio
+async def test_simple_math_accepts_fullwidth_question_mark(chat_service):
+    events = []
+    async for event in chat_service.process_message("(8-2) * 5 ？"):
+        events.append(event)
+    chunk_events = [e for e in events if isinstance(e, ChunkEvent)]
+    assert chunk_events[0].content == "30"
+
+
+@pytest.mark.asyncio
+async def test_simple_math_accepts_trailing_equals(chat_service):
+    events = []
+    async for event in chat_service.process_message("4*4="):
+        events.append(event)
+    chunk_events = [e for e in events if isinstance(e, ChunkEvent)]
+    assert chunk_events[0].content == "16"
+
+
+@pytest.mark.asyncio
+async def test_greeting_uses_deterministic_fast_path(chat_service):
+    events = []
+    async for event in chat_service.process_message("Hello"):
+        events.append(event)
+
+    assert isinstance(events[0], PlannerEvent)
+    assert events[0].needs_search is False
+    assert "greeting" in events[0].reasoning.lower()
+    chunk_events = [e for e in events if isinstance(e, ChunkEvent)]
+    assert chunk_events[0].content == "Hello! How can I help you today?"
+
+
+@pytest.mark.asyncio
+async def test_greeting_fast_path_skips_planner(chat_service):
+    with patch.object(chat_service._planner, "plan", new_callable=AsyncMock) as mock_plan:
+        events = []
+        async for event in chat_service.process_message("你好"):
+            events.append(event)
+    mock_plan.assert_not_awaited()
+    chunk_events = [e for e in events if isinstance(e, ChunkEvent)]
+    assert chunk_events[0].content == "你好！我可以怎麼幫你？"
+
+
+@pytest.mark.asyncio
 async def test_search_failed_event_when_search_returns_empty(chat_service):
     """When needs_search=True but search returns no results, emit SearchFailedEvent."""
     planner_decision = PlannerDecision(
@@ -475,7 +552,7 @@ async def test_chat_stream_yields_chat_events_without_search(chat_service):
         ),
     ):
         events = []
-        async for event in chat_service.process_message("Hello!"):
+        async for event in chat_service.process_message("Explain recursion briefly"):
             events.append(event)
 
         assert isinstance(events[0], PlannerEvent)
@@ -580,7 +657,7 @@ async def test_chat_service_redacts_secret_like_output(chat_service):
         patch.object(chat_service._executor, "build_citations", return_value=[]),
     ):
         events = []
-        async for event in chat_service.process_message("hello"):
+        async for event in chat_service.process_message("Explain this"):
             events.append(event)
         chunk_events = [e for e in events if isinstance(e, ChunkEvent)]
         assert chunk_events

@@ -1,4 +1,5 @@
 import asyncio
+import ast
 import logging
 import re
 from collections.abc import AsyncGenerator
@@ -30,6 +31,13 @@ _TEMPORAL_PATTERNS = re.compile(
     r"|news|headline|breaking)",
     re.IGNORECASE,
 )
+_SIMPLE_MATH_PATTERN = re.compile(r"^\s*[\d\.\+\-\*\/\(\)\s]+\s*$")
+_TRAILING_MATH_QUESTION_PATTERN = re.compile(r"\s*(?:=\s*)?[?？]+\s*$")
+_TRAILING_EQUALS_PATTERN = re.compile(r"\s*=\s*$")
+_GREETING_PATTERN = re.compile(
+    r"^\s*(hi|hello|hey|yo|你好|哈囉|哈啰|嗨|早安|午安|晚安)([!\s,.?].*)?$",
+    re.IGNORECASE,
+)
 
 
 class ChatService:
@@ -51,6 +59,30 @@ class ChatService:
         message: str,
         history: list[dict] | None = None,
     ) -> AsyncGenerator[ChatEvent, None]:
+        direct_greeting = _reply_greeting(message)
+        if direct_greeting is not None:
+            yield PlannerEvent(
+                needs_search=False,
+                reasoning="Deterministic fast-path for greeting",
+                search_queries=[],
+                query_type="conversational",
+            )
+            yield ChunkEvent(content=direct_greeting)
+            yield DoneEvent()
+            return
+
+        direct_math = _solve_simple_math(message)
+        if direct_math is not None:
+            yield PlannerEvent(
+                needs_search=False,
+                reasoning="Deterministic fast-path for simple arithmetic",
+                search_queries=[],
+                query_type="conversational",
+            )
+            yield ChunkEvent(content=direct_math)
+            yield DoneEvent()
+            return
+
         # Step 1: Planner decides
         decision = await self._planner.plan(message, history)
 
@@ -167,3 +199,52 @@ class ChatService:
         if handler:
             return await handler()
         return ""
+
+
+def _solve_simple_math(message: str) -> str | None:
+    normalized = _normalize_math_message(message)
+    if not _SIMPLE_MATH_PATTERN.fullmatch(normalized):
+        return None
+    try:
+        expr = ast.parse(normalized, mode="eval")
+        value = _eval_math_expr(expr.body)
+    except Exception:
+        return None
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return str(value)
+
+
+def _normalize_math_message(message: str) -> str:
+    normalized = message.strip()
+    normalized = _TRAILING_MATH_QUESTION_PATTERN.sub("", normalized)
+    normalized = _TRAILING_EQUALS_PATTERN.sub("", normalized)
+    return normalized.strip()
+
+
+def _reply_greeting(message: str) -> str | None:
+    stripped = message.strip()
+    if not _GREETING_PATTERN.fullmatch(stripped):
+        return None
+    if re.search(r"[A-Za-z]", stripped):
+        return "Hello! How can I help you today?"
+    return "你好！我可以怎麼幫你？"
+
+
+def _eval_math_expr(node) -> int | float:
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        return node.value
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        value = _eval_math_expr(node.operand)
+        return value if isinstance(node.op, ast.UAdd) else -value
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div)):
+        left = _eval_math_expr(node.left)
+        right = _eval_math_expr(node.right)
+        if isinstance(node.op, ast.Add):
+            return left + right
+        if isinstance(node.op, ast.Sub):
+            return left - right
+        if isinstance(node.op, ast.Mult):
+            return left * right
+        return left / right
+    raise ValueError("Unsupported expression")

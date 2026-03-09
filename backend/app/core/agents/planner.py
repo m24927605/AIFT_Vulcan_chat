@@ -1,10 +1,17 @@
 import json
 import logging
+import re
 
 from app.core.models.schemas import PlannerDecision
 from app.core.services.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
+
+_GREETING_PATTERN = re.compile(
+    r"^\s*(hi|hello|hey|yo|你好|哈囉|哈啰|嗨|早安|午安|晚安)([!\s,.?].*)?$",
+    re.IGNORECASE,
+)
+_LOW_RISK_PATTERN = re.compile(r"^[\w\s\+\-\*\/\(\)\.,!?]+$", re.IGNORECASE)
 
 PLANNER_SYSTEM_PROMPT = """You are a search planning agent. Your job is to analyze user queries and decide whether a web search is needed.
 
@@ -71,9 +78,30 @@ class PlannerAgent:
             return PlannerDecision(**data)
         except (json.JSONDecodeError, Exception) as e:
             logger.warning(f"Planner failed to parse response: {e}")
+            if _is_low_risk_query(message):
+                return PlannerDecision(
+                    needs_search=False,
+                    reasoning="Planner parse failed on low-risk query; falling back to direct answer",
+                    search_queries=[],
+                    query_type="conversational",
+                )
             return PlannerDecision(
                 needs_search=True,
                 reasoning="Failed to analyze query, defaulting to search",
                 search_queries=[message],
                 query_type="factual",
             )
+
+
+def _is_low_risk_query(message: str) -> bool:
+    stripped = message.strip()
+    if not stripped:
+        return False
+    if _GREETING_PATTERN.fullmatch(stripped):
+        return True
+    if len(stripped) <= 80 and _LOW_RISK_PATTERN.fullmatch(stripped):
+        if any(ch.isdigit() for ch in stripped):
+            return True
+        if any(op in stripped for op in "+-*/()"):
+            return True
+    return False

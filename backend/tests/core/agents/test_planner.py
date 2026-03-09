@@ -56,6 +56,14 @@ async def test_planner_handles_invalid_json_gracefully(planner, mock_llm):
 
 
 @pytest.mark.asyncio
+async def test_planner_invalid_json_falls_back_to_no_search_for_greeting(planner, mock_llm):
+    mock_llm.chat.return_value = "not valid json"
+    decision = await planner.plan("Hello")
+    assert decision.needs_search is False
+    assert decision.query_type == "conversational"
+
+
+@pytest.mark.asyncio
 async def test_planner_outputs_data_sources_for_tw_stock(planner, mock_llm):
     mock_llm.chat.return_value = json.dumps({
         "needs_search": True,
