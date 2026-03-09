@@ -148,11 +148,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         ip = self._client_ip(request)
         now = time.monotonic()
+        # Use path-based bucket so /api/chat and /api/analysis have independent quotas
+        bucket = request.url.path.strip("/").replace("/", "_")
         storage = getattr(request.app.state, "conversation_storage", None)
         check_rate_limit = getattr(storage, "check_rate_limit", None)
         if storage is not None and callable(check_rate_limit):
             result = await check_rate_limit(
-                bucket="chat",
+                bucket=bucket,
                 key=ip,
                 now=now,
                 window_seconds=self._window,
@@ -173,16 +175,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if sum(len(v) for v in self._hits.values()) > 1000:
             self._cleanup_stale()
 
+        fallback_key = f"{bucket}:{ip}"
         cutoff = now - self._window
-        self._hits[ip] = [t for t in self._hits[ip] if t > cutoff]
-        if len(self._hits[ip]) >= self._max:
+        self._hits[fallback_key] = [t for t in self._hits[fallback_key] if t > cutoff]
+        if len(self._hits[fallback_key]) >= self._max:
             logger.warning("Rate limit exceeded for %s", ip)
             return JSONResponse(
                 status_code=429,
                 content={"error": "Too many requests. Please try again later."},
                 headers={"Retry-After": str(self._window)},
             )
-        self._hits[ip].append(now)
+        self._hits[fallback_key].append(now)
         return await call_next(request)
 
 

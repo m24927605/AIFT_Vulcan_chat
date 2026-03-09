@@ -189,6 +189,42 @@ No per-conversation token is exposed to the frontend.
 | POST | `/api/conversations/:id/telegram-link/request` | Session cookie | Generate one-time link code for Telegram bot numeric keypad flow (`/start` -> `Start Linking`) or `/link <code>` |
 | POST | `/api/conversations/:id/unlink-telegram` | Session cookie | Unlink Telegram chat ID (owner-only) |
 
+### Deep Analysis
+
+Asynchronous multi-round analysis powered by Celery task queue. Tasks are session-owned: only the session that submitted a task can query its result.
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/api/analysis` | Session cookie + CSRF | Submit a deep analysis task (returns `task_id`, HTTP 202) |
+| GET | `/api/analysis/:task_id` | Session cookie | Poll task status (owner-only; unknown/unowned tasks return 403) |
+
+**POST Request:**
+```json
+{
+  "query": "Analyze TSMC revenue trends for 2025",
+  "max_rounds": 3
+}
+```
+
+**POST Response (202):**
+```json
+{
+  "task_id": "abc-123",
+  "status": "pending"
+}
+```
+
+**GET Response:**
+```json
+{
+  "task_id": "abc-123",
+  "status": "SUCCESS",
+  "result": { "answer": "...", "rounds": 3 }
+}
+```
+
+Task ownership is persisted in SQLite, so it survives process restarts and is consistent across instances sharing the same database. Session rotation automatically migrates task ownership.
+
 ### Notifications
 
 | Method | Endpoint | Description |
@@ -205,7 +241,7 @@ The current implementation includes multiple defensive layers across browser, AP
 - State-changing web routes require a CSRF header/cookie match and reject unexpected `Origin` values.
 - Admin notification endpoints require `X-API-Key` backed by `API_SECRET_KEY`.
 - Telegram linking requires a one-time 8-digit code with expiry, attempt limits, and Telegram-side possession proof.
-- `/api/chat` rate limiting is enforced server-side and persisted in SQLite, so limits remain effective across process restarts and multiple app instances sharing the same database.
+- `/api/chat` and `/api/analysis` rate limiting is enforced server-side and persisted in SQLite, so limits remain effective across process restarts and multiple app instances sharing the same database. Each endpoint uses a separate rate-limit bucket (30 req/min per IP each).
 - API responses send baseline browser hardening headers to reduce clickjacking, MIME sniffing, and downgrade risk.
 - Search results are treated as untrusted input. Before the Executor sees them, they are sanitized and normalized into a constrained schema (`source_kind`, `title`, `publisher`, `published_at`, `excerpt`, `facts`, `numbers`) rather than passing arbitrary raw page text.
 - LLM prompts explicitly forbid following instructions embedded in search results, citations, or conversation content.
