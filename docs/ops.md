@@ -62,7 +62,7 @@ All backend logs include a request ID for tracing:
 | Tavily Search | 1000 req/month (free) | 10s per query | Returns empty results → Executor answers from knowledge |
 | `/api/chat` endpoint | 30 req/min per IP | — | HTTP 429 with `Retry-After` header |
 | `/api/analysis` endpoint | 30 req/min per IP | — | HTTP 429 with `Retry-After` header |
-| Backend → Telegram push | Telegram rate limit: 30 msg/sec | 5s | Retry 3x with exponential backoff (1s, 2s, 4s); logged on failure |
+| Backend → Telegram push | Telegram rate limit: 30 msg/sec | 5s | 3 attempts with exponential backoff (1s, 2s between attempts); logged on failure |
 | SSE connection | No server-side limit | Browser default (~5 min) | Frontend reconnects on next user message |
 
 ## Logs
@@ -80,7 +80,13 @@ cd frontend && vercel --yes --prod
 # Backend (Railway)
 railway up --detach --service vulcan-backend
 
-# Or via Docker
+# Or via Docker (web server, default)
 docker build -t vulcan-backend ./backend
-docker run -p 8000:8000 --env-file backend/.env vulcan-backend
+docker run -p 8000:8000 --env-file .env vulcan-backend
+
+# Celery worker (set PROCESS_TYPE=worker)
+docker run --env-file .env -e PROCESS_TYPE=worker vulcan-backend
 ```
+
+> **Note:** `healthcheckPath` is configured per-service via Railway API (not in `railway.toml`)
+> so the Celery worker service is not forced to expose an HTTP endpoint.

@@ -513,7 +513,6 @@ These are explicitly out of scope for this project:
 │   ├── evals/
 │   │   ├── adversarial_dataset.json   # 28 red-team attack cases
 │   │   ├── planner_eval_dataset.json  # 20 planner accuracy test cases
-│   │   ├── run_adversarial.py         # Adversarial test runner
 │   │   └── run_planner_eval.py        # Planner evaluation runner
 │   └── tests/                 # 327 pytest tests (unit + integration + adversarial)
 ├── frontend/
