@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Vulcan Web Search Chatbot",
-        version="0.1.3",
+        version="0.1.4",
         lifespan=lifespan,
     )
 

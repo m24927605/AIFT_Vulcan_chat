@@ -70,6 +70,11 @@ class NormalizedSearchResult(BaseModel):
     facts: list[ExtractedFact] = Field(default_factory=list, max_length=5)
     numbers: list[ExtractedNumber] = Field(default_factory=list, max_length=8)
 
+    @property
+    def content(self) -> str:
+        """Compatibility alias for older code/tests expecting SearchResult.content."""
+        return self.excerpt
+
 
 class CreateConversationRequest(BaseModel):
     id: str | None = Field(None, pattern=r"^[0-9a-f\-]{36}$")
