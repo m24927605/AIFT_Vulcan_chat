@@ -36,6 +36,9 @@ Vulcan_SWE_Assignment_Senior.pdf
 # Coverage
 .coverage
 
+# Test results
+test-results/
+
 # Lock files (uv)
 uv.lock
 

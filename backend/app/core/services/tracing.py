@@ -52,20 +52,21 @@ class TracingService:
         if not self._client:
             return None
         try:
-            trace = self._client.trace(name=name, metadata=metadata or {})
-            trace.generation(
+            observation = self._client.start_observation(
                 name=name,
+                as_type="generation",
                 model=model,
                 input=input_text,
                 output=output_text,
                 model_parameters={"temperature": temperature},
-                usage={"input": tokens_input, "output": tokens_output},
+                usage_details={"input": tokens_input or 0, "output": tokens_output or 0},
                 metadata={
                     "latency_ms": latency_ms,
                     **(metadata or {}),
                 },
             )
-            return trace
+            observation.end()
+            return observation
         except Exception:
             logger.warning("Langfuse trace failed", exc_info=True)
             return None

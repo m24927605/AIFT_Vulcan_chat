@@ -31,10 +31,10 @@ def test_trace_llm_call_noop_when_disabled():
 def test_trace_llm_call_creates_generation_when_enabled():
     with patch("langfuse.Langfuse") as MockLangfuse:
         mock_client = MagicMock()
-        mock_trace = MagicMock()
-        mock_client.trace.return_value = mock_trace
+        mock_observation = MagicMock()
+        mock_client.start_observation.return_value = mock_observation
         MockLangfuse.return_value = mock_client
         tracer = TracingService(public_key="pk-test", secret_key="sk-test")
         tracer.trace_llm_call(name="planner", model="gpt-4o", input_text="What is TSMC?", output_text='{"needs_search": true}', temperature=0.1, latency_ms=150.0, tokens_input=50, tokens_output=20, metadata={"agent": "planner"})
-        mock_client.trace.assert_called_once()
-        mock_trace.generation.assert_called_once()
+        mock_client.start_observation.assert_called_once()
+        mock_observation.end.assert_called_once()
