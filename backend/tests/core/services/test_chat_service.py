@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 
+from app.core.agents.verifier import VerificationResult
 from app.core.security import guard_model_output
 from app.core.services.chat_service import ChatService
 from app.core.models.schemas import PlannerDecision, SearchResult, FugleSource, FinnhubSource
@@ -12,6 +13,17 @@ from app.core.models.events import (
     SearchFailedEvent,
     DoneEvent,
 )
+
+_PASS_VERIFICATION = VerificationResult(
+    is_consistent=True, confidence=0.95, issues=[], suggestion=""
+)
+
+
+def _mock_verifier(svc: ChatService) -> ChatService:
+    """Replace the verifier with an AsyncMock to avoid unawaited coroutine warnings."""
+    svc._verifier = AsyncMock()
+    svc._verifier.verify = AsyncMock(return_value=_PASS_VERIFICATION)
+    return svc
 
 
 @pytest.fixture
@@ -25,10 +37,11 @@ def mock_llm():
 
 @pytest.fixture
 def chat_service(mock_llm):
-    return ChatService(
+    svc = ChatService(
         llm=mock_llm,
         tavily_api_key="test-tavily",
     )
+    return _mock_verifier(svc)
 
 
 @pytest.mark.asyncio
@@ -270,7 +283,7 @@ async def test_chat_with_fugle_and_tavily_parallel(chat_service):
 @pytest.mark.asyncio
 async def test_chat_without_fugle_key_skips_fugle(mock_llm):
     """When fugle_api_key is empty, skip Fugle even if data_sources present."""
-    service = ChatService(llm=mock_llm, tavily_api_key="test-tavily", fugle_api_key="")
+    service = _mock_verifier(ChatService(llm=mock_llm, tavily_api_key="test-tavily", fugle_api_key=""))
     planner_decision = PlannerDecision(
         needs_search=True,
         reasoning="Taiwan stock",
@@ -339,7 +352,7 @@ async def test_temporal_keyword_forces_search(chat_service):
 async def test_fugle_only_without_search_queries(mock_llm):
     """When data_sources present but no search queries, fetch Fugle only."""
     from unittest.mock import MagicMock
-    service = ChatService(llm=mock_llm, tavily_api_key="test-tavily", fugle_api_key="test-fugle")
+    service = _mock_verifier(ChatService(llm=mock_llm, tavily_api_key="test-tavily", fugle_api_key="test-fugle"))
 
     planner_decision = PlannerDecision(
         needs_search=False,
@@ -375,7 +388,7 @@ async def test_fugle_only_without_search_queries(mock_llm):
 async def test_fugle_historical_fetch(mock_llm):
     """Test that fugle_historical type calls get_historical."""
     from unittest.mock import MagicMock
-    service = ChatService(llm=mock_llm, tavily_api_key="test-tavily", fugle_api_key="test-fugle")
+    service = _mock_verifier(ChatService(llm=mock_llm, tavily_api_key="test-tavily", fugle_api_key="test-fugle"))
 
     planner_decision = PlannerDecision(
         needs_search=True,
@@ -410,7 +423,7 @@ async def test_chat_with_finnhub_and_tavily_parallel(mock_llm):
     """When data_sources has Finnhub entries, fetch Finnhub + Tavily in parallel."""
     from unittest.mock import MagicMock
 
-    service = ChatService(llm=mock_llm, tavily_api_key="test-tavily", finnhub_api_key="test-finnhub")
+    service = _mock_verifier(ChatService(llm=mock_llm, tavily_api_key="test-tavily", finnhub_api_key="test-finnhub"))
     planner_decision = PlannerDecision(
         needs_search=True,
         reasoning="US stock query",
@@ -454,7 +467,7 @@ async def test_chat_with_finnhub_and_tavily_parallel(mock_llm):
 @pytest.mark.asyncio
 async def test_chat_without_finnhub_key_skips_finnhub(mock_llm):
     """When finnhub_api_key is empty, skip Finnhub even if data_sources present."""
-    service = ChatService(llm=mock_llm, tavily_api_key="test-tavily", finnhub_api_key="")
+    service = _mock_verifier(ChatService(llm=mock_llm, tavily_api_key="test-tavily", finnhub_api_key=""))
     planner_decision = PlannerDecision(
         needs_search=True,
         reasoning="US stock",
@@ -483,10 +496,10 @@ async def test_chat_with_fugle_and_finnhub_and_tavily(mock_llm):
     """Triple parallel: Fugle + Finnhub + Tavily."""
     from unittest.mock import MagicMock
 
-    service = ChatService(
+    service = _mock_verifier(ChatService(
         llm=mock_llm, tavily_api_key="test-tavily",
         fugle_api_key="test-fugle", finnhub_api_key="test-finnhub",
-    )
+    ))
     planner_decision = PlannerDecision(
         needs_search=True,
         reasoning="Compare TW and US stocks",
@@ -670,8 +683,6 @@ from app.core.models.events import VerificationEvent
 
 @pytest.mark.asyncio
 async def test_chat_service_runs_verifier_after_search(chat_service):
-    from unittest.mock import MagicMock as MM
-
     planner_decision = PlannerDecision(
         needs_search=True,
         reasoning="Need info",
@@ -691,6 +702,9 @@ async def test_chat_service_runs_verifier_after_search(chat_service):
         for chunk in ["TSMC is $180 [1]"]:
             yield chunk
 
+    # Fixture already provides an AsyncMock verifier; just set the return value
+    chat_service._verifier.verify.return_value = _PASS_VERIFICATION
+
     with (
         patch.object(
             chat_service._planner,
@@ -709,14 +723,6 @@ async def test_chat_service_runs_verifier_after_search(chat_service):
         ),
         patch.object(
             chat_service._executor, "build_citations", return_value=[]
-        ),
-        patch.object(
-            chat_service._verifier,
-            "verify",
-            new_callable=AsyncMock,
-            return_value=MM(
-                is_consistent=True, confidence=0.95, issues=[], suggestion=""
-            ),
         ),
     ):
         events = []

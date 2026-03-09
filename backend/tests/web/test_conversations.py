@@ -70,6 +70,7 @@ def test_list_returns_session_telegram_chat_id(client):
 
 def test_create_sets_cookie_and_owner(client):
     c, storage = client
+    c.cookies.set("csrf_token", "test-csrf")
     storage.create_conversation.return_value = {
         "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
         "title": "Test",
@@ -79,7 +80,6 @@ def test_create_sets_cookie_and_owner(client):
         "/api/conversations",
         json={"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890", "title": "Test"},
         headers={"X-CSRF-Token": "test-csrf"},
-        cookies={"csrf_token": "test-csrf"},
     )
     assert r.status_code == 200
     assert "vulcan_session" in r.cookies
@@ -98,11 +98,11 @@ def test_create_auto_links_telegram_from_session(client):
     storage.create_conversation.return_value = {
         "id": conv_id, "title": "Test", "telegram_chat_id": 44444,
     }
+    c.cookies.set("csrf_token", "test-csrf")
     r = c.post(
         "/api/conversations",
         json={"id": conv_id, "title": "Test"},
         headers={"X-CSRF-Token": "test-csrf"},
-        cookies={"csrf_token": "test-csrf"},
     )
     assert r.status_code == 200
     kwargs = storage.create_conversation.await_args.kwargs
@@ -173,10 +173,10 @@ def test_unlink_calls_session_level_unlink(client):
         "id": "conv-1", "web_owner_session_id": "my-sess",
         "telegram_chat_id": 55555, "title": "T", "created_at": "2026-03-04",
     }
+    c.cookies.set("csrf_token", "test-csrf")
     r = c.post(
         "/api/conversations/conv-1/unlink-telegram",
         headers={"X-CSRF-Token": "test-csrf"},
-        cookies={"csrf_token": "test-csrf"},
     )
     assert r.status_code == 200
     storage.unlink_telegram_session.assert_awaited_once_with("my-sess")

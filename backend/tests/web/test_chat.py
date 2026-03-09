@@ -28,11 +28,11 @@ def test_health_endpoint(client):
 
 
 def test_chat_rejects_empty_message(client):
+    client.cookies.set("csrf_token", "t")
     response = client.post(
         "/api/chat",
         json={"message": ""},
         headers={"X-CSRF-Token": "t"},
-        cookies={"csrf_token": "t"},
     )
     assert response.status_code == 422
 
@@ -53,11 +53,11 @@ def test_chat_returns_sse_stream(client):
         mock_service.process_message = mock_process_message
         mock_get_service.return_value = mock_service
 
+        client.cookies.set("csrf_token", "t")
         response = client.post(
             "/api/chat",
             json={"message": "Hi there"},
             headers={"X-CSRF-Token": "t"},
-            cookies={"csrf_token": "t"},
         )
         assert response.status_code == 200
         assert "text/event-stream" in response.headers["content-type"]
@@ -72,11 +72,11 @@ def test_chat_returns_sse_stream(client):
 
 
 def test_chat_rejects_cross_origin_request(client):
+    client.cookies.set("csrf_token", "t")
     response = client.post(
         "/api/chat",
         json={"message": "Hi there"},
         headers={"X-CSRF-Token": "t", "Origin": "https://evil.example"},
-        cookies={"csrf_token": "t"},
     )
     assert response.status_code == 403
 
