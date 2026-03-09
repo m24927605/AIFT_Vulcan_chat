@@ -5,4 +5,9 @@ RUN pip install --no-cache-dir .
 COPY app/ app/
 EXPOSE 8000
 ENV MODE=all
-CMD ["python", "-m", "app.entrypoint"]
+ENV PROCESS_TYPE=web
+CMD if [ "$PROCESS_TYPE" = "worker" ]; then \
+      celery -A app.core.tasks.celery_tasks worker --loglevel=info --concurrency=2; \
+    else \
+      python -m app.entrypoint; \
+    fi
