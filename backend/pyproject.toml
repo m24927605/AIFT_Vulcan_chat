@@ -19,6 +19,8 @@ dependencies = [
     "fugle-marketdata>=1.0.0",
     "finnhub-python>=2.4.0",
     "langfuse>=2.0.0",
+    "celery[redis]>=5.3.0",
+    "redis>=5.0.0",
 ]
 
 [project.optional-dependencies]

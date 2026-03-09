@@ -16,7 +16,7 @@ from app.core.middleware import (
     setup_logging,
 )
 from app.core.storage import ConversationStorage
-from app.web.routes import chat, health, notify, conversations
+from app.web.routes import chat, health, notify, conversations, analysis
 
 setup_logging()
 
@@ -68,6 +68,7 @@ def create_app() -> FastAPI:
     app.include_router(chat.router)
     app.include_router(notify.router)
     app.include_router(conversations.router)
+    app.include_router(analysis.router)
 
     return app
 
