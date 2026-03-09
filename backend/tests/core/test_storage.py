@@ -59,6 +59,31 @@ class TestSessionRotationMigratesOwnership:
         old_convs = await storage.list_conversations_by_web_owner(OLD_SESSION)
         assert len(old_convs) == 0
 
+    async def test_task_ownership_migrated_after_rotation(self, storage):
+        import time
+
+        now = int(time.time())
+        await storage.db.execute(
+            "INSERT INTO web_sessions (session_id, ua_hash, ip_prefix, created_at, last_seen_at, expires_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (OLD_SESSION, "hash", "127.0", now, now, now + 86400),
+        )
+        await storage.db.commit()
+
+        await storage.set_task_owner("task-rotate-1", OLD_SESSION)
+        await storage.set_task_owner("task-rotate-2", OLD_SESSION)
+
+        await storage.rotate_web_session(
+            old_session_id=OLD_SESSION,
+            new_session_id=NEW_SESSION,
+            ua_hash="hash",
+            ip_prefix="127.0",
+            expires_at=now + 86400,
+        )
+
+        assert await storage.get_task_owner("task-rotate-1") == NEW_SESSION
+        assert await storage.get_task_owner("task-rotate-2") == NEW_SESSION
+
 
 class TestDeleteConversationWithChildRows:
     """delete_conversation must succeed even when child rows exist."""

@@ -394,9 +394,13 @@ class ConversationStorage:
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (new_session_id, ua_hash, ip_prefix, now, now, expires_at, old_tg),
         )
-        # Migrate conversation ownership to the new session
+        # Migrate conversation and task ownership to the new session
         await self.db.execute(
             "UPDATE conversations SET web_owner_session_id = ? WHERE web_owner_session_id = ?",
+            (new_session_id, old_session_id),
+        )
+        await self.db.execute(
+            "UPDATE task_ownership SET owner_session_id = ? WHERE owner_session_id = ?",
             (new_session_id, old_session_id),
         )
         await self.db.commit()
