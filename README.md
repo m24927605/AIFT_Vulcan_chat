@@ -2,45 +2,95 @@
 
 > **Live Demo**: [https://vulcanchat.xyz](https://vulcanchat.xyz)
 
-A web search chatbot for Vulcan, a cybersecurity company, powered by a 2-Agent AI architecture that intelligently searches the web and provides answers with cited sources. Supports both web UI and Telegram bot with bidirectional message sync.
+A web search chatbot for Vulcan, a cybersecurity company, powered by a 3-Agent AI architecture (Planner → Executor → Verifier) that intelligently searches the web, provides answers with cited sources, and verifies output consistency. Built with defense-in-depth security across every layer — from input sanitization and prompt-injection hardening to adversarial red-team testing. Supports both web UI and Telegram bot with bidirectional message sync.
 
 ## Architecture
 
 ```
-User → Next.js Frontend → FastAPI Backend ←→ Telegram Bot
-                              │
-                        Chat Service (Orchestrator)
-                              │
-                ┌─────────────┼─────────────┐
-                │             │             │
-          Planner Agent  Data Sources   Executor Agent
-               │       ┌─────┼──────────┐       │
-               │   Search   Fugle    Finnhub   │
-               │   Service  Service  Service   │
-               │   (Tavily)                    │
-               └──────── LLM Client ────────┘
-                     (primary + fallback)
-                  OpenAI GPT-4o ↔ Anthropic Claude
-                │
-        Deterministic Pre-check
-        (temporal keyword safety net)
+User ──→ Next.js Frontend ──→ FastAPI Backend ←──→ Telegram Bot
+                                    │
+            ┌───────────── Chat Service (Orchestrator) ──────────────┐
+            │                       │                                │
+            │    ┌──────────────────┼──────────────────┐             │
+            │    │                  │                  │             │
+            │  Planner Agent   Data Sources      Executor Agent     │
+            │  (temp 0.1)    ┌─────┼──────────┐  (temp 0.7)        │
+            │    │         Search  Fugle  Finnhub    │              │
+            │    │        (Tavily) (TW)   (US/FX)    │              │
+            │    │                                   │              │
+            │    │          Verifier Agent            │              │
+            │    │          (temp 0.1)                │              │
+            │    │     hallucination detection        │              │
+            │    │     source consistency check       │              │
+            │    │                                   │              │
+            │    └────────── LLM Client ─────────────┘              │
+            │           (primary + fallback)                        │
+            │        OpenAI GPT-4o ↔ Anthropic Claude               │
+            │                                                       │
+            │  ┌─ Deterministic Pre-check ──────────────────────┐   │
+            │  │  greeting fast-path / math evaluator /         │   │
+            │  │  temporal keyword safety net                   │   │
+            │  └────────────────────────────────────────────────┘   │
+            │                                                       │
+            │  ┌─ Security Pipeline ────────────────────────────┐   │
+            │  │  input sanitization → schema extraction →      │   │
+            │  │  prompt hardening → output secret guard        │   │
+            │  └────────────────────────────────────────────────┘   │
+            │                                                       │
+            │  ┌─ Observability ────────────────────────────────┐   │
+            │  │  Langfuse tracing (all 3 agents) +             │   │
+            │  │  structured logging with request ID            │   │
+            │  └────────────────────────────────────────────────┘   │
+            └───────────────────────────────────────────────────────┘
+
+Async Deep Analysis (Celery + Redis)
+            │
+   POST /api/analysis → Celery Worker → Multi-round loop
+                         (Planner → Search → Refine) × N rounds
+                         → Final Executor synthesis
+                         → Poll GET /api/analysis/:task_id
 ```
 
-### 2-Agent Design
+### 3-Agent Pipeline
 
-- **Planner Agent**: Analyzes user queries to decide if web search is needed. Classifies queries as temporal, factual, or conversational, and generates optimized search keywords.
-- **Executor Agent**: Synthesizes answers from search results (when available) or model knowledge. Generates responses with citation markers `[1]`, `[2]` and streams them via SSE.
+- **Planner Agent** (temp 0.1): Analyzes user queries to decide if web search is needed. Classifies queries as temporal, factual, or conversational, generates optimized search keywords, and routes to specialized data sources (Fugle for Taiwan stocks, Finnhub for US stocks and forex).
+- **Executor Agent** (temp 0.7): Synthesizes answers from search results (when available) or model knowledge. Generates responses with citation markers `[1]`, `[2]` and streams them via SSE. Enforces exact numerical quoting from sources — never rounds or estimates.
+- **Verifier Agent** (temp 0.1): Post-generation quality gate that checks every number, statistic, and percentage in the Executor's answer against the original search results. Reports consistency score, specific issues, and remediation suggestions. Only activated when search results are available.
+
+### Request Flow
+
+```
+User Query
+  │
+  ├─ [Deterministic] Greeting? → direct response (skip all agents)
+  ├─ [Deterministic] Simple math? → AST evaluator (skip all agents)
+  │
+  ├─ [LLM] Planner Agent → needs_search? query_type? data_sources?
+  │   └─ Trace to Langfuse
+  │
+  ├─ [Deterministic] Temporal keyword override (safety net)
+  │
+  ├─ [Parallel] Fetch data sources
+  │   ├─ Tavily web search
+  │   ├─ Fugle (Taiwan stocks)
+  │   └─ Finnhub (US/global stocks, forex)
+  │
+  ├─ [Security] Sanitize + normalize results (schema extraction)
+  │
+  ├─ [LLM] Executor Agent (streaming) → answer with citations
+  │   ├─ Guard output (redact secrets before each chunk)
+  │   └─ Trace to Langfuse
+  │
+  ├─ [LLM] Verifier Agent (if search was used)
+  │   ├─ Check: numbers, citations, source consistency
+  │   └─ Trace to Langfuse
+  │
+  └─ Emit SSE: planner → searching → chunks → verification → citations → done
+```
 
 ### Search Reliability: Deterministic Pre-check
 
 LLM-based planning is powerful but non-deterministic — the Planner may occasionally misjudge a time-sensitive query as not requiring search. To guarantee correctness for temporal questions while keeping low-risk queries stable, the backend uses **deterministic fast-paths and safety nets** around the Planner:
-
-```
-User Query → Deterministic Fast-path (greeting / simple math)
-          → Planner Agent (LLM)
-          → Deterministic Pre-check
-          → Search / Direct Answer
-```
 
 The deterministic layer does three things:
 
@@ -52,8 +102,10 @@ In addition, if the Planner fails to parse its own JSON output, low-risk queries
 
 ### Key Features
 
-- Real-time streaming responses (SSE)
-- Intelligent search decision making
+- Real-time streaming responses (SSE) with intermediate agent events
+- 3-Agent pipeline: Planner → Executor → Verifier with hallucination detection
+- Async deep analysis via Celery task queue (multi-round Planner → Search → Refine)
+- Intelligent search decision making with deterministic safety nets
 - Source citations with clickable references
 - Agent thinking process visualization
 - Multi-conversation management with persistence
@@ -64,18 +116,10 @@ In addition, if the Planner fails to parse its own JSON output, low-risk queries
 - i18n support (English, 繁體中文)
 - Dark mode
 - LLM fallback: auto-switches to Anthropic on OpenAI timeout/429/5xx
-- Structured logging with request ID tracing
-- Rate limiting (`/api/chat`, storage-backed for cross-instance consistency)
-- Enhanced health check with dependency status
-- Anonymous `HttpOnly` web sessions with server-side ownership checks
-- CSRF protection with double-submit token and `Origin` validation
-- Session binding to user-agent hash + IP prefix with periodic rotation
-- Baseline browser security headers (`HSTS`, `X-Frame-Options`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`)
-- LLM prompt-injection hardening for user history and external search results
-- Schema extraction for external search/tool results before executor prompting
-- Sensitive-output redaction guard for secret-like tokens and credentials
-- Secret redaction in server logs for Telegram bot tokens, bearer tokens, and API-key-like values
-- Deterministic fast-paths for greetings and simple arithmetic to avoid unnecessary planner/search drift
+- LLMOps observability: Langfuse tracing for all agent calls (latency, tokens, decisions)
+- Structured logging with request ID tracing and secret redaction
+- Adversarial red-team test suite with automated prompt injection defense validation
+- Planner evaluation dataset with offline accuracy scoring
 
 ## Tech Stack
 
@@ -87,6 +131,8 @@ In addition, if the Planner fails to parse its own JSON output, low-risk queries
 | Search | Tavily API |
 | Taiwan Stock Data | Fugle MarketData API |
 | US/Global Stock Data | Finnhub API |
+| Task Queue | Celery + Redis |
+| Observability | Langfuse (LLM tracing), structured logging |
 | Streaming | Server-Sent Events (SSE) |
 | Database | SQLite (aiosqlite) |
 | Telegram | python-telegram-bot |
@@ -103,6 +149,7 @@ In addition, if the Planner fails to parse its own JSON output, low-risk queries
 - Anthropic API key (optional, for LLM fallback)
 - Fugle MarketData API key (optional, for Taiwan stock data: https://developer.fugle.tw)
 - Finnhub API key (optional, for US/global stock + forex data: https://finnhub.io)
+- Redis (optional, for Celery async deep analysis)
 
 ### Backend Setup
 
@@ -121,6 +168,9 @@ uvicorn app.web.main:app --reload --port 8000
 
 # Or run all modes (web + telegram)
 MODE=all python -m app.entrypoint
+
+# Optional: start Celery worker for deep analysis
+celery -A app.core.celery_app worker --loglevel=info
 ```
 
 ### Frontend Setup
@@ -171,7 +221,9 @@ Send a chat message and receive a streaming SSE response.
 | `planner` | Planner Agent's decision (search/no-search, reasoning) |
 | `searching` | Search progress for each query |
 | `chunk` | Answer text chunk (streaming) |
+| `verification` | Verifier Agent's consistency check result |
 | `citations` | Source references |
+| `search_failed` | Warning when search was needed but returned empty |
 | `done` | Stream complete |
 
 ### Conversations
@@ -182,16 +234,16 @@ No per-conversation token is exposed to the frontend.
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | GET | `/api/conversations?ids=a,b` | Session cookie | List current session's conversations (all when `ids` omitted, filtered when provided) |
-| POST | `/api/conversations` | Session cookie | Create a conversation owned by current session |
+| POST | `/api/conversations` | Session cookie + CSRF | Create a conversation owned by current session |
 | GET | `/api/conversations/:id` | Session cookie | Get conversation details (owner-only) |
-| DELETE | `/api/conversations/:id` | Session cookie | Delete conversation (owner-only) |
+| DELETE | `/api/conversations/:id` | Session cookie + CSRF | Delete conversation (owner-only) |
 | GET | `/api/conversations/:id/messages` | Session cookie | Get messages (owner-only) |
-| POST | `/api/conversations/:id/telegram-link/request` | Session cookie | Generate one-time link code for Telegram bot numeric keypad flow (`/start` -> `Start Linking`) or `/link <code>` |
-| POST | `/api/conversations/:id/unlink-telegram` | Session cookie | Unlink Telegram chat ID (owner-only) |
+| POST | `/api/conversations/:id/telegram-link/request` | Session cookie + CSRF | Generate one-time link code for Telegram bot numeric keypad flow (`/start` -> `Start Linking`) or `/link <code>` |
+| POST | `/api/conversations/:id/unlink-telegram` | Session cookie + CSRF | Unlink Telegram chat ID (owner-only) |
 
 ### Deep Analysis
 
-Asynchronous multi-round analysis powered by Celery task queue. Tasks are session-owned: only the session that submitted a task can query its result.
+Asynchronous multi-round analysis powered by Celery task queue. The worker iterates a Planner → Search → Refine loop (up to 5 rounds), then synthesizes a comprehensive answer from all accumulated search results. Tasks are session-owned: only the session that submitted a task can query its result.
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
@@ -227,33 +279,10 @@ Task ownership is persisted in SQLite, so it survives process restarts and is co
 
 ### Notifications
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/notify` | Send notification via Telegram |
-| POST | `/api/notify/broadcast` | Broadcast to all subscribers |
-
-## Security Controls
-
-The current implementation includes multiple defensive layers across browser, API, session, Telegram-linking, and LLM paths:
-
-- Web conversations are protected by server-managed `HttpOnly` sessions stored in `web_sessions`, not browser-managed auth tokens.
-- Session reuse is bound to both user-agent hash and IP prefix, and sessions rotate periodically.
-- State-changing web routes require a CSRF header/cookie match and reject unexpected `Origin` values.
-- Admin notification endpoints require `X-API-Key` backed by `API_SECRET_KEY`.
-- Telegram linking requires a one-time 8-digit code with expiry, attempt limits, and Telegram-side possession proof.
-- `/api/chat` and `/api/analysis` rate limiting is enforced server-side and persisted in SQLite, so limits remain effective across process restarts and multiple app instances sharing the same database. Each endpoint uses a separate rate-limit bucket (30 req/min per IP each).
-- API responses send baseline browser hardening headers to reduce clickjacking, MIME sniffing, and downgrade risk.
-- Search results are treated as untrusted input. Before the Executor sees them, they are sanitized and normalized into a constrained schema (`source_kind`, `title`, `publisher`, `published_at`, `excerpt`, `facts`, `numbers`) rather than passing arbitrary raw page text.
-- LLM prompts explicitly forbid following instructions embedded in search results, citations, or conversation content.
-- Model output is passed through a secret-egress guard that redacts secret-like tokens such as API keys, bearer tokens, and session-like values.
-- Server logging applies secret redaction filters so accidental exception strings do not emit Telegram bot tokens, bearer tokens, or API-key-like values in plain text.
-- Greetings and simple arithmetic use deterministic handlers, which reduces prompt drift and avoids unnecessary exposure to external search or planner failure paths.
-
-### Security Notes
-
-- `API_SECRET_KEY` is required in production. If it is empty outside local development, the web server refuses to start.
-- Anonymous sessions provide owner isolation for browser conversations, but they are not a substitute for full user-account authentication.
-- Schema extraction reduces prompt-injection risk significantly, but it is still a pragmatic control, not formal information-flow isolation.
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/api/notify` | `X-API-Key` | Send notification via Telegram |
+| POST | `/api/notify/broadcast` | `X-API-Key` | Broadcast to all subscribers |
 
 ### GET /api/health
 
@@ -268,10 +297,91 @@ Health check endpoint with dependency status.
 }
 ```
 
+## Security Controls
+
+The system implements defense-in-depth security across six layers: transport, session, API, LLM input, LLM output, and operational observability.
+
+### Layer 1: Transport & Browser Hardening
+
+- CORS restricted to the configured `FRONTEND_URL` only; `localhost:3000` is added exclusively when `API_SECRET_KEY` is empty (dev mode).
+- All responses include security headers: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` (deny camera/mic/geo), and `Strict-Transport-Security` (HTTPS only).
+- `API_SECRET_KEY` is required in production. If it is empty outside local development, the web server refuses to start.
+
+### Layer 2: Session & Authentication
+
+- Web conversations are protected by server-managed `HttpOnly` session cookies (`vulcan_session`) stored in the `web_sessions` table — not browser-managed auth tokens.
+- Sessions are bound to user-agent hash + IP prefix. Mismatched fingerprints are rejected immediately.
+- Sessions rotate every 24 hours. Rotation migrates all owned conversations and analysis tasks to the new session ID atomically.
+- Orphan conversations (no owner) can only be auto-claimed if the requesting session's linked Telegram chat ID matches the conversation's Telegram chat ID — preventing strangers from claiming conversations by guessing UUIDs.
+
+### Layer 3: API Protection
+
+- State-changing routes require CSRF double-submit validation: the `X-CSRF-Token` header must match the `csrf_token` cookie (constant-time comparison), and the `Origin` header must match the configured frontend URL.
+- Rate limiting is enforced per-endpoint (`/api/chat` and `/api/analysis` each get an independent 30 req/min per-IP bucket) and persisted in SQLite, remaining effective across process restarts and multiple instances.
+- Admin notification endpoints require `X-API-Key` backed by `API_SECRET_KEY`.
+- Telegram linking requires a one-time 8-digit code hashed with HMAC-SHA256, with 10-minute expiry, a 5-attempt limit, and Telegram-side possession proof.
+- Analysis task ownership is persisted in SQLite with default-deny: unknown or unowned task IDs return 403, not the task result.
+
+### Layer 4: LLM Input Hardening (Prompt Injection Defense)
+
+- **Search result sanitization**: Before the Executor sees any search result, content is scanned for prompt injection patterns (`ignore.*instructions`, `reveal.*system prompt`, `exfiltrat`, `tool instructions`, `api_key`, `secret`, `token`) and matches are replaced with `[filtered]`.
+- **Schema extraction**: Raw search result text is never passed to the LLM. Instead, results are normalized into a constrained schema (`source_kind`, `title`, `publisher`, `published_at`, `excerpt`, `facts[]`, `numbers[]`) with strict length limits (title: 300 chars, content: 4000 chars, max 3 facts, max 5 numbers).
+- **Prompt boundary enforcement**: All agent system prompts explicitly instruct the LLM to treat search results, citations, and conversation history as untrusted data — never following instructions embedded within them.
+- **Deterministic fast-paths**: Greetings and simple arithmetic bypass the LLM entirely (AST-based math evaluator), eliminating prompt drift risk for these categories.
+
+### Layer 5: LLM Output Hardening (Data Exfiltration Defense)
+
+- **Secret egress guard**: Before every response chunk is sent to the client, it is scanned for secret-like patterns — OpenAI keys (`sk-*`), session tokens (`sess-*`), base64 blobs (32+ chars), API key assignments (`api_key=...`), and bearer tokens. Matches are replaced with `[REDACTED: sensitive content removed]`.
+- **Verifier Agent**: After the Executor generates an answer (when search results are present), the Verifier Agent independently checks every number, statistic, and percentage against the original sources. This catches hallucinated data that could mislead users, and surfaces a confidence score and issue list via the `verification` SSE event.
+
+### Layer 6: Operational Security & Observability
+
+- **Log secret redaction**: Server logging applies `SecretRedactionFilter` to all log output, catching Telegram bot tokens, bearer tokens, `sk-*` keys, session tokens, and API key assignments before they reach stdout.
+- **Langfuse LLM tracing**: Every Planner, Executor, and Verifier call is traced with input, output, latency, token usage, and model metadata. Traces degrade gracefully (no-op) when Langfuse keys are absent.
+- **Request ID correlation**: Every request gets a unique ID (auto-generated or forwarded via `X-Request-ID`), injected into all log records and returned in the response header for end-to-end tracing.
+- **Rate limit IP source**: Rate limiting uses the direct connection IP only — `X-Forwarded-For` is ignored because it is user-controlled and can be spoofed to bypass limits.
+
+### Adversarial Testing (Red Team)
+
+The project includes an automated adversarial testing pipeline (`evals/adversarial_dataset.json`) with 28 attack cases across 8 categories, validated by the `tests/evals/test_adversarial.py` test suite:
+
+| Category | Count | What It Tests |
+|----------|-------|---------------|
+| Jailbreak | 3 | DAN prompts, role-play override attempts |
+| Prompt Leaking | 4 | System prompt extraction, chain-of-thought leaking |
+| Instruction Override | 3 | "Ignore previous instructions" variants |
+| Data Exfiltration | 4 | API key extraction, bearer token probing |
+| Indirect Injection | 4 | Malicious instructions embedded in search results |
+| Encoding Bypass | 3 | Mixed-case evasion, Unicode obfuscation |
+| Output Attack | 4 | Secret patterns in model output (sk-*, sess-*) |
+| Benign (control) | 3 | Legitimate queries that must NOT be filtered |
+
+**Automated test assertions:**
+- `TestInputSanitization`: Injection patterns in search results are caught and replaced with `[filtered]`
+- `TestOutputGuard`: Secret-like patterns in model output are redacted before reaching the client
+- `TestBenignInputsNotFiltered`: Legitimate queries pass through sanitization unaltered
+- `TestPlannerResilience`: The Planner does not follow injected instructions in user messages
+- `TestAdversarialReport`: Coverage validation — at least 25 cases across at least 5 categories
+
+### Planner Evaluation
+
+A 20-case evaluation dataset (`evals/planner_eval_dataset.json`) covers 8 query categories (Taiwan stocks, US stocks, forex, temporal, factual, conversational, greeting, math) and measures three accuracy dimensions:
+- `needs_search_accuracy`: Was the search/no-search decision correct?
+- `query_type_accuracy`: Was the query classified correctly (temporal/factual/conversational)?
+- `data_source_accuracy`: Were the correct data sources routed (Fugle/Finnhub/none)?
+
+Run with `python -m evals.run_planner_eval` (live) or `--dry-run` (dataset stats only).
+
+### Security Notes
+
+- Anonymous sessions provide owner isolation for browser conversations, but they are not a substitute for full user-account authentication.
+- Schema extraction reduces prompt-injection risk significantly, but it is still a pragmatic control, not formal information-flow isolation.
+- The adversarial test suite covers known attack categories but is not exhaustive; the dataset should grow as new attack vectors emerge.
+
 ## Testing
 
 ```bash
-# Backend tests (unit + integration + E2E, all mocked, no API keys needed)
+# Backend tests (327 tests — unit + integration + E2E, all mocked, no API keys needed)
 make test-backend
 
 # Frontend tests (unit + integration)
@@ -279,6 +389,12 @@ make test-frontend
 
 # Browser E2E tests (Playwright, requires dev server)
 cd frontend && npm run test:e2e
+
+# Adversarial red-team tests only
+cd backend && pytest tests/evals/test_adversarial.py -v
+
+# Planner evaluation (offline, no API keys)
+cd backend && python -m evals.run_planner_eval --dry-run
 ```
 
 ### CI/CD Pipeline
@@ -324,6 +440,11 @@ Push to main ──┬── Backend Tests (pytest, ≥90 test gate) ──┬�
 | `DATA_DIR` | Directory for SQLite databases | No |
 | `FRONTEND_URL` | Frontend URL for CORS | No |
 | `API_SECRET_KEY` | Protects `/api/notify` endpoints, Telegram link-code hashing, and production web auth boot validation | For production |
+| `LANGFUSE_PUBLIC_KEY` | Langfuse public key for LLM tracing | No |
+| `LANGFUSE_SECRET_KEY` | Langfuse secret key for LLM tracing | No |
+| `LANGFUSE_HOST` | Langfuse host URL | No |
+| `CELERY_BROKER_URL` | Redis URL for Celery broker (default: `redis://localhost:6379/0`) | For deep analysis |
+| `CELERY_RESULT_BACKEND` | Redis URL for Celery results (default: `redis://localhost:6379/1`) | For deep analysis |
 
 ### Frontend (.env.local)
 
@@ -347,12 +468,14 @@ These are explicitly out of scope for this project:
 | SQLite | PostgreSQL | Zero-config, embedded, sufficient for demo scope; storage abstraction allows migration |
 | Tavily | Google Custom Search | Generous free tier, simpler API, built-in content extraction |
 | Session cookie (`HttpOnly`) | `localStorage` tokens | Prevents JS access to auth material and reduces XSS token theft risk |
+| Schema extraction | Raw text prompting | Reduces prompt injection surface at the cost of some information loss |
+| Default-deny task ownership | Allow-if-unknown | Security over convenience; prevents information leak on restart/cross-instance |
 
 ## Known Limitations
 
 | Area | Limitation | Mitigation | Priority | Exit Criteria |
 |------|-----------|------------|----------|---------------|
-| **Search source reliability** | Tavily results may include low-quality or outdated sources; the system does not verify factual accuracy | Fugle provides exchange-grade data for Taiwan stocks; Finnhub provides real-time data for US/global stocks and forex; Tavily `include_answer` provides a high-accuracy direct answer; Executor prompt enforces exact numerical quoting with per-source citations | P2 — partially mitigated | Add source credibility scoring; discard results below threshold |
+| **Search source reliability** | Tavily results may include low-quality or outdated sources; the system does not verify factual accuracy | Fugle provides exchange-grade data for Taiwan stocks; Finnhub provides real-time data for US/global stocks and forex; Tavily `include_answer` provides a high-accuracy direct answer; Executor prompt enforces exact numerical quoting with per-source citations; Verifier Agent cross-checks numbers against sources | P2 — partially mitigated | Add source credibility scoring; discard results below threshold |
 | **Planner misjudgment** | LLM-based planning is non-deterministic — edge cases may lead to incorrect search/no-search decisions | Deterministic greeting/math fast-paths, temporal pre-check overrides missed searches, and low-risk parse-failure fallback avoids unnecessary search | P1 — partially mitigated | Achieve <1% miss rate on a 500-query evaluation set covering temporal, factual, and conversational queries |
 | **LLM fallback coverage** | Fallback triggers on timeout, connection error, 429, and 5xx; 4xx client errors are not retried | Primary/fallback is configurable via `PRIMARY_LLM`/`FALLBACK_LLM` env vars | P3 — mitigated | Add health-check routing and circuit breaker for sustained outages |
 | **SQLite scalability** | SQLite is single-writer; not suitable for high-concurrency production use | Sufficient for demo scope; storage abstraction allows migration | P2 | Migrate to PostgreSQL; verify ≥50 concurrent writers with no lock contention |
@@ -365,34 +488,45 @@ These are explicitly out of scope for this project:
 ├── backend/
 │   ├── app/
 │   │   ├── core/
-│   │   │   ├── agents/      # Planner + Executor agents
-│   │   │   ├── services/    # Chat, LLM (OpenAI/Anthropic/Fallback), Search services
-│   │   │   ├── models/      # Pydantic schemas & events
-│   │   │   ├── config.py    # Pydantic settings (env-based)
-│   │   │   ├── storage.py   # Conversation storage (SQLite)
+│   │   │   ├── agents/        # Planner + Executor + Verifier agents
+│   │   │   ├── services/      # Chat, LLM (OpenAI/Anthropic/Fallback), Search, Tracing
+│   │   │   ├── tasks/         # Celery tasks + deep analysis pipeline
+│   │   │   ├── models/        # Pydantic schemas & SSE events
+│   │   │   ├── config.py      # Pydantic settings (env-based)
+│   │   │   ├── storage.py     # SQLite storage (conversations, sessions, task ownership)
+│   │   │   ├── security.py    # Input sanitization, output guard, schema extraction
+│   │   │   ├── celery_app.py  # Celery app factory
+│   │   │   ├── middleware.py   # Request logging, rate limiting, security headers
+│   │   │   ├── web_session.py  # Session management, CSRF, cookie handling
 │   │   │   └── exceptions.py
 │   │   ├── web/
-│   │   │   ├── main.py      # FastAPI app with CORS
-│   │   │   └── routes/      # chat, conversations, notify, health
+│   │   │   ├── main.py        # FastAPI app with CORS + middleware stack
+│   │   │   ├── deps.py        # Authorization helpers (conversation ownership)
+│   │   │   └── routes/        # chat, conversations, analysis, notify, health
 │   │   ├── telegram/
-│   │   │   ├── bot.py       # Telegram bot setup
-│   │   │   ├── handlers/    # Message handlers
-│   │   │   ├── storage.py   # Subscription storage (SQLite)
-│   │   │   ├── scheduler.py # Scheduled tasks
-│   │   │   └── formatter.py # Message formatting
-│   │   └── entrypoint.py    # Startup (web/telegram/all modes)
-│   └── tests/               # pytest test suite
+│   │   │   ├── bot.py         # Telegram bot setup
+│   │   │   ├── handlers/      # Message handlers
+│   │   │   ├── storage.py     # Subscription storage (SQLite)
+│   │   │   ├── scheduler.py   # Scheduled tasks
+│   │   │   └── formatter.py   # Message formatting
+│   │   └── entrypoint.py      # Startup (web/telegram/all modes)
+│   ├── evals/
+│   │   ├── adversarial_dataset.json   # 28 red-team attack cases
+│   │   ├── planner_eval_dataset.json  # 20 planner accuracy test cases
+│   │   ├── run_adversarial.py         # Adversarial test runner
+│   │   └── run_planner_eval.py        # Planner evaluation runner
+│   └── tests/                 # 327 pytest tests (unit + integration + adversarial)
 ├── frontend/
-│   ├── app/                 # Next.js app router
+│   ├── app/                   # Next.js app router
 │   └── src/
-│       ├── components/      # React components (incl. OnboardingTour)
-│       ├── hooks/           # Custom hooks (useChat, useSSE)
-│       ├── i18n/            # Translations (en, zh-TW)
-│       └── lib/             # Types and utilities
+│       ├── components/        # React components (incl. OnboardingTour)
+│       ├── hooks/             # Custom hooks (useChat, useSSE)
+│       ├── i18n/              # Translations (en, zh-TW)
+│       └── lib/               # Types and utilities
 ├── docs/
-│   ├── architecture.md      # Final architecture + E2E flow
-│   ├── ops.md               # Operational runbook
-│   ├── ai_usage.md          # AI tool usage + prompts
-│   └── plans/               # Historical implementation plans
+│   ├── architecture.md        # Final architecture + E2E flow
+│   ├── ops.md                 # Operational runbook
+│   ├── ai_usage.md            # AI tool usage + prompts
+│   └── plans/                 # Historical implementation plans
 └── Makefile
 ```
