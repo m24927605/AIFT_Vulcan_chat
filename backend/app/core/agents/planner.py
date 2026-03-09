@@ -1,9 +1,11 @@
 import json
 import logging
 import re
+import time
 
 from app.core.models.schemas import PlannerDecision
 from app.core.services.llm_client import LLMClient
+from app.core.services.tracing import get_tracer
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +64,7 @@ class PlannerAgent:
         messages = list(history or [])
         messages.append({"role": "user", "content": message})
 
+        t0 = time.perf_counter()
         try:
             response = await self._llm.chat(
                 system_prompt=PLANNER_SYSTEM_PROMPT,
@@ -75,9 +78,28 @@ class PlannerAgent:
                 cleaned = cleaned.strip()
 
             data = json.loads(cleaned)
+            get_tracer().trace_llm_call(
+                name="planner",
+                model=self._llm.provider_name,
+                input_text=message,
+                output_text=response,
+                temperature=0.1,
+                latency_ms=(time.perf_counter() - t0) * 1000,
+                metadata={"agent": "planner", "decision": data},
+            )
             return PlannerDecision(**data)
         except (json.JSONDecodeError, Exception) as e:
+            latency_ms = (time.perf_counter() - t0) * 1000
             logger.warning(f"Planner failed to parse response: {e}")
+            get_tracer().trace_llm_call(
+                name="planner",
+                model=self._llm.provider_name,
+                input_text=message,
+                output_text=str(e),
+                temperature=0.1,
+                latency_ms=latency_ms,
+                metadata={"agent": "planner", "error": str(e)},
+            )
             if _is_low_risk_query(message):
                 return PlannerDecision(
                     needs_search=False,

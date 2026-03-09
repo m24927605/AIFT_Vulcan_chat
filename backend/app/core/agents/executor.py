@@ -1,8 +1,10 @@
 import logging
+import time
 from collections.abc import AsyncGenerator
 
 from app.core.models.schemas import Citation, NormalizedSearchResult, SearchResult
 from app.core.services.llm_client import LLMClient
+from app.core.services.tracing import get_tracer
 
 logger = logging.getLogger(__name__)
 
@@ -51,11 +53,28 @@ class ExecutorAgent:
         messages = list(history or [])
         messages.append({"role": "user", "content": message})
 
+        t0 = time.perf_counter()
+        full_output: list[str] = []
         async for chunk in self._llm.chat_stream(
             system_prompt=system_prompt,
             messages=messages,
         ):
+            full_output.append(chunk)
             yield chunk
+
+        get_tracer().trace_llm_call(
+            name="executor",
+            model=self._llm.provider_name,
+            input_text=message,
+            output_text="".join(full_output),
+            temperature=0.7,
+            latency_ms=(time.perf_counter() - t0) * 1000,
+            metadata={
+                "agent": "executor",
+                "has_search_results": bool(search_results),
+                "num_results": len(search_results),
+            },
+        )
 
     def build_citations(self, search_results: list[SearchResult]) -> list[Citation]:
         return [

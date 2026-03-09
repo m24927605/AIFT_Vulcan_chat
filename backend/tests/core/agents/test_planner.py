@@ -1,6 +1,6 @@
 import json
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch, ANY
 
 from app.core.agents.planner import PlannerAgent
 from app.core.models.schemas import PlannerDecision
@@ -136,3 +136,16 @@ def test_planner_prompt_contains_finnhub_instructions():
     assert "finnhub_quote" in PLANNER_SYSTEM_PROMPT
     assert "finnhub_forex" in PLANNER_SYSTEM_PROMPT
     assert "finnhub_candles" in PLANNER_SYSTEM_PROMPT
+
+
+@pytest.mark.asyncio
+async def test_planner_calls_tracing_service(planner, mock_llm):
+    mock_llm.chat.return_value = _mock_planner_response(True, "temporal")
+    with patch("app.core.agents.planner.get_tracer") as mock_get_tracer:
+        mock_tracer = MagicMock()
+        mock_get_tracer.return_value = mock_tracer
+        await planner.plan("TSMC stock?")
+        mock_tracer.trace_llm_call.assert_called_once()
+        call_kwargs = mock_tracer.trace_llm_call.call_args.kwargs
+        assert call_kwargs["name"] == "planner"
+        assert "TSMC stock?" in call_kwargs["input_text"]

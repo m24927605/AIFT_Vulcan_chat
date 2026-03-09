@@ -130,3 +130,22 @@ def test_format_search_results_uses_structured_untrusted_blocks(executor, sample
     assert "<facts>" in formatted
     assert "<numbers>" in formatted
     assert "URL:" not in formatted
+
+
+@pytest.mark.asyncio
+async def test_executor_calls_tracing_after_stream(executor, mock_llm):
+    async def mock_stream(*args, **kwargs):
+        for text in ["Hello ", "world"]:
+            yield text
+
+    mock_llm.chat_stream = MagicMock(return_value=mock_stream())
+    with patch("app.core.agents.executor.get_tracer") as mock_get_tracer:
+        mock_tracer = MagicMock()
+        mock_get_tracer.return_value = mock_tracer
+        chunks = []
+        async for chunk in executor.execute(message="test", search_results=[]):
+            chunks.append(chunk)
+        mock_tracer.trace_llm_call.assert_called_once()
+        call_kwargs = mock_tracer.trace_llm_call.call_args.kwargs
+        assert call_kwargs["name"] == "executor"
+        assert call_kwargs["output_text"] == "Hello world"

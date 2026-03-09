@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     mode: str = "web"
     api_secret_key: str = ""  # Protects admin endpoints (notify, broadcast)
     data_dir: str = "."  # Directory for SQLite databases
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_host: str = "https://cloud.langfuse.com"
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
