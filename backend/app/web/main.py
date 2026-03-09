@@ -51,9 +51,13 @@ def create_app() -> FastAPI:
     )
 
     # Middleware order: outermost first
+    origins = [settings.frontend_url]
+    if not settings.api_secret_key:
+        # Dev mode only — allow localhost for local frontend development
+        origins.append("http://localhost:3000")
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[settings.frontend_url, "http://localhost:3000"],
+        allow_origins=origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

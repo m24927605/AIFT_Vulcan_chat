@@ -143,7 +143,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             del self._hits[ip]
 
     async def dispatch(self, request: Request, call_next) -> Response:
-        if request.url.path != "/api/chat":
+        if request.url.path not in ("/api/chat", "/api/analysis"):
             return await call_next(request)
 
         ip = self._client_ip(request)

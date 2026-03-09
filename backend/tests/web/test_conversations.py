@@ -124,20 +124,27 @@ def test_get_forbidden_for_other_session(client):
 
 
 def test_get_claims_owner_when_unset(client):
+    """Auto-claim requires matching Telegram chat ID between session and conversation."""
     c, storage = client
     c.cookies.set("vulcan_session", "session-a")
+    # Session must have a telegram_chat_id that matches the conversation's
+    storage.get_web_session.return_value = {
+        **_DEFAULT_SESSION,
+        "session_id": "session-a",
+        "telegram_chat_id": 12345,
+    }
     storage.get_conversation.side_effect = [
         {
             "id": "conv-1",
             "web_owner_session_id": None,
-            "telegram_chat_id": None,
+            "telegram_chat_id": 12345,
             "title": "Legacy",
             "created_at": "2026-03-03",
         },
         {
             "id": "conv-1",
             "web_owner_session_id": "session-a",
-            "telegram_chat_id": None,
+            "telegram_chat_id": 12345,
             "title": "Legacy",
             "created_at": "2026-03-03",
         },
