@@ -24,6 +24,7 @@ export function ChatLayout() {
     planner,
     searchStatus,
     citations,
+    verification,
     conversations,
     activeId,
     activeTelegramChatId,
@@ -96,6 +97,7 @@ export function ChatLayout() {
           planner={planner}
           searchStatus={searchStatus}
           citations={citations}
+          verification={verification}
           onSend={sendMessage}
         />
       </div>

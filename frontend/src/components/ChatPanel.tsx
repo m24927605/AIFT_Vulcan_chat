@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { ChatMessage, CitationItem, PlannerData, SearchingData } from "@/lib/types";
+import type { ChatMessage, CitationItem, PlannerData, SearchingData, VerificationData } from "@/lib/types";
 import { useLocale } from "@/i18n";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
@@ -13,6 +13,7 @@ interface ChatPanelProps {
   planner: PlannerData | null;
   searchStatus: SearchingData[];
   citations: CitationItem[];
+  verification: VerificationData | null;
   onSend: (message: string) => void;
 }
 
@@ -23,6 +24,7 @@ export function ChatPanel({
   planner,
   searchStatus,
   citations,
+  verification,
   onSend,
 }: ChatPanelProps) {
   const { t } = useLocale();
@@ -48,6 +50,10 @@ export function ChatPanel({
           const isAssistantStreaming =
             isLast && msg.role === "assistant" && isLoading;
 
+          // Show verification only on the latest assistant message, not while streaming
+          const showVerification =
+            isLast && msg.role === "assistant" && !isLoading;
+
           return (
             <MessageBubble
               key={i}
@@ -55,6 +61,7 @@ export function ChatPanel({
               isStreaming={isAssistantStreaming}
               streamingContent={isAssistantStreaming ? streamingContent : undefined}
               citations={msg.role === "assistant" ? (msg.citations || []) : []}
+              verification={showVerification ? verification : null}
             />
           );
         })}

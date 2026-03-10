@@ -1,12 +1,13 @@
 "use client";
 
-import type { ChatMessage, CitationItem, PlannerData, SearchingData } from "@/lib/types";
+import type { ChatMessage, CitationItem, PlannerData, SearchingData, VerificationData } from "@/lib/types";
 import { useLocale } from "@/i18n";
 import { StreamingText } from "./StreamingText";
 import { AgentThinking } from "./AgentThinking";
 import { SearchProgress } from "./SearchProgress";
 import { CitationList } from "./CitationList";
 import { SearchBadge } from "./SearchBadge";
+import { VerificationBadge } from "./VerificationBadge";
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -15,6 +16,7 @@ interface MessageBubbleProps {
   planner?: PlannerData | null;
   searchStatus?: SearchingData[];
   citations?: CitationItem[];
+  verification?: VerificationData | null;
 }
 
 export function MessageBubble({
@@ -24,6 +26,7 @@ export function MessageBubble({
   planner,
   searchStatus = [],
   citations = [],
+  verification = null,
 }: MessageBubbleProps) {
   const { t } = useLocale();
   const isUser = message.role === "user";
@@ -66,6 +69,7 @@ export function MessageBubble({
               isStreaming={isStreaming}
             />
             {!isStreaming && <CitationList citations={citations} />}
+            {!isStreaming && <VerificationBadge verification={verification} />}
           </div>
         )}
       </div>
