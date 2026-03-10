@@ -8,15 +8,15 @@ describe("next config security headers", () => {
 
   it("includes CSP with frame-ancestors none", async () => {
     const rules = await nextConfig.headers?.();
-    const all = rules?.[0]?.headers ?? [];
-    const csp = all.find((h) => h.key === "Content-Security-Policy")?.value ?? "";
+    const global = rules?.find((r) => r.source === "/(.*)")?.headers ?? [];
+    const csp = global.find((h) => h.key === "Content-Security-Policy")?.value ?? "";
     expect(csp).toContain("frame-ancestors 'none'");
   });
 
   it("includes connect-src with self (same-origin proxy)", async () => {
     const rules = await nextConfig.headers?.();
-    const all = rules?.[0]?.headers ?? [];
-    const csp = all.find((h) => h.key === "Content-Security-Policy")?.value ?? "";
+    const global = rules?.find((r) => r.source === "/(.*)")?.headers ?? [];
+    const csp = global.find((h) => h.key === "Content-Security-Policy")?.value ?? "";
     expect(csp).toContain("connect-src 'self' ws: wss:");
   });
 
