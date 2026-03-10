@@ -770,3 +770,109 @@ async def test_chat_service_skips_verifier_when_no_search(chat_service):
             e for e in events if isinstance(e, VerificationEvent)
         ]
         assert len(verification_events) == 0
+
+
+@pytest.mark.asyncio
+async def test_forex_override_injects_finnhub_forex(mock_llm):
+    """When query mentions 匯率 and planner omits data_sources, inject finnhub_forex."""
+    from unittest.mock import MagicMock
+
+    service = _mock_verifier(ChatService(
+        llm=mock_llm, tavily_api_key="test-tavily", finnhub_api_key="test-finnhub",
+    ))
+    planner_decision = PlannerDecision(
+        needs_search=True,
+        reasoning="Exchange rate query",
+        search_queries=["USD TWD exchange rate"],
+        query_type="temporal",
+        # Planner omits data_sources — the rule should inject it
+    )
+
+    async def mock_execute(*args, **kwargs):
+        yield "USD/TWD = 32.15"
+
+    with (
+        patch.object(service._planner, "plan", new_callable=AsyncMock, return_value=planner_decision),
+        patch.object(service._search, "search_multiple", new_callable=AsyncMock, return_value=[]),
+        patch.object(service._executor, "execute", side_effect=mock_execute),
+        patch.object(service._executor, "build_citations", return_value=[]),
+    ):
+        service._finnhub = MagicMock()
+        service._finnhub.get_forex_rates = AsyncMock(return_value="Exchange Rates (base: USD):\n  TWD: 32.15")
+
+        events = []
+        async for event in service.process_message("請給我美元兌換台幣的匯率"):
+            events.append(event)
+
+        service._finnhub.get_forex_rates.assert_called_once_with("USD")
+        assert isinstance(events[-1], DoneEvent)
+
+
+@pytest.mark.asyncio
+async def test_forex_override_skips_when_already_present(mock_llm):
+    """When planner already includes finnhub_forex, don't duplicate."""
+    from unittest.mock import MagicMock
+
+    service = _mock_verifier(ChatService(
+        llm=mock_llm, tavily_api_key="test-tavily", finnhub_api_key="test-finnhub",
+    ))
+    planner_decision = PlannerDecision(
+        needs_search=True,
+        reasoning="Forex query",
+        search_queries=["EUR USD rate"],
+        query_type="temporal",
+        data_sources=[FinnhubSource(type="finnhub_forex", symbol="EUR")],
+    )
+
+    async def mock_execute(*args, **kwargs):
+        yield "EUR/USD = 1.08"
+
+    with (
+        patch.object(service._planner, "plan", new_callable=AsyncMock, return_value=planner_decision),
+        patch.object(service._search, "search_multiple", new_callable=AsyncMock, return_value=[]),
+        patch.object(service._executor, "execute", side_effect=mock_execute),
+        patch.object(service._executor, "build_citations", return_value=[]),
+    ):
+        service._finnhub = MagicMock()
+        service._finnhub.get_forex_rates = AsyncMock(return_value="Exchange Rates (base: EUR):\n  USD: 1.08")
+
+        events = []
+        async for event in service.process_message("歐元兌美元匯率"):
+            events.append(event)
+
+        # Should call once (from planner), not duplicate
+        service._finnhub.get_forex_rates.assert_called_once_with("EUR")
+
+
+@pytest.mark.asyncio
+async def test_forex_override_detects_jpy(mock_llm):
+    """Forex override correctly detects JPY as base currency."""
+    from unittest.mock import MagicMock
+
+    service = _mock_verifier(ChatService(
+        llm=mock_llm, tavily_api_key="test-tavily", finnhub_api_key="test-finnhub",
+    ))
+    planner_decision = PlannerDecision(
+        needs_search=True,
+        reasoning="Forex",
+        search_queries=["JPY TWD rate"],
+        query_type="temporal",
+    )
+
+    async def mock_execute(*args, **kwargs):
+        yield "JPY/TWD"
+
+    with (
+        patch.object(service._planner, "plan", new_callable=AsyncMock, return_value=planner_decision),
+        patch.object(service._search, "search_multiple", new_callable=AsyncMock, return_value=[]),
+        patch.object(service._executor, "execute", side_effect=mock_execute),
+        patch.object(service._executor, "build_citations", return_value=[]),
+    ):
+        service._finnhub = MagicMock()
+        service._finnhub.get_forex_rates = AsyncMock(return_value="Exchange Rates (base: JPY)")
+
+        events = []
+        async for event in service.process_message("日圓換台幣匯率"):
+            events.append(event)
+
+        service._finnhub.get_forex_rates.assert_called_once_with("JPY")

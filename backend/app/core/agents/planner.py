@@ -48,6 +48,11 @@ Respond with ONLY valid JSON in this exact format:
   "data_sources": [{"type": "fugle_quote", "symbol": "2330"}]
 }
 
+Examples:
+- "台積電股價" → data_sources: [{"type": "fugle_quote", "symbol": "2330"}]
+- "美金換台幣匯率" → data_sources: [{"type": "finnhub_forex", "symbol": "USD"}]
+- "AAPL stock price" → data_sources: [{"type": "finnhub_quote", "symbol": "AAPL"}]
+
 data_sources is optional — use [] when the query is NOT about stocks/forex.
 Taiwan stocks → fugle_quote/fugle_historical. US/global/forex → finnhub_* types."""
 

@@ -36,6 +36,19 @@ _TEMPORAL_PATTERNS = re.compile(
 _SIMPLE_MATH_PATTERN = re.compile(r"^\s*[\d\.\+\-\*\/\(\)\s]+\s*$")
 _TRAILING_MATH_QUESTION_PATTERN = re.compile(r"\s*(?:=\s*)?[?？]+\s*$")
 _TRAILING_EQUALS_PATTERN = re.compile(r"\s*=\s*$")
+_FOREX_PATTERN = re.compile(
+    r"(匯率|換.*幣|兌換|exchange\s*rate|forex|USD.?TWD|EUR.?USD|JPY|GBP)",
+    re.IGNORECASE,
+)
+_FOREX_BASE_MAP = {
+    "美元": "USD", "美金": "USD", "usd": "USD",
+    "歐元": "EUR", "eur": "EUR",
+    "日圓": "JPY", "日幣": "JPY", "日元": "JPY", "jpy": "JPY",
+    "英鎊": "GBP", "gbp": "GBP",
+    "澳幣": "AUD", "aud": "AUD",
+    "加幣": "CAD", "cad": "CAD",
+    "人民幣": "CNY", "cny": "CNY",
+}
 _GREETING_PATTERN = re.compile(
     r"^\s*(hi|hello|hey|yo|你好|哈囉|哈啰|嗨|早安|午安|晚安)([!\s,.?].*)?$",
     re.IGNORECASE,
@@ -96,6 +109,18 @@ class ChatService:
             decision.query_type = "temporal"
             if not decision.search_queries:
                 decision.search_queries = [message]
+
+        # Deterministic override: inject finnhub_forex if query is about exchange rates
+        if _FOREX_PATTERN.search(message) and self._finnhub:
+            has_forex = any(
+                isinstance(src, FinnhubSource) and src.type == "finnhub_forex"
+                for src in (decision.data_sources or [])
+            )
+            if not has_forex:
+                base = _detect_forex_base(message)
+                logger.info(f"Rule-based override: injecting finnhub_forex('{base}') for '{message[:50]}'")
+                decision.data_sources = list(decision.data_sources or [])
+                decision.data_sources.append(FinnhubSource(type="finnhub_forex", symbol=base))
 
         yield PlannerEvent(
             needs_search=decision.needs_search,
@@ -269,3 +294,12 @@ def _eval_math_expr(node) -> int | float:
             return left * right
         return left / right
     raise ValueError("Unsupported expression")
+
+
+def _detect_forex_base(message: str) -> str:
+    """Extract base currency from a forex query. Defaults to USD."""
+    lower = message.lower()
+    for keyword, code in _FOREX_BASE_MAP.items():
+        if keyword in lower:
+            return code
+    return "USD"
