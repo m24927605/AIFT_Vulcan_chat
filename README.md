@@ -381,7 +381,7 @@ Run with `python -m evals.run_planner_eval` (live) or `--dry-run` (dataset stats
 ## Testing
 
 ```bash
-# Backend tests (327 tests — unit + integration + E2E, all mocked, no API keys needed)
+# Backend tests (330 tests — unit + integration + E2E, all mocked, no API keys needed)
 make test-backend
 
 # Frontend tests (unit + integration)
@@ -514,7 +514,7 @@ These are explicitly out of scope for this project:
 │   │   ├── adversarial_dataset.json   # 28 red-team attack cases
 │   │   ├── planner_eval_dataset.json  # 20 planner accuracy test cases
 │   │   └── run_planner_eval.py        # Planner evaluation runner
-│   └── tests/                 # 327 pytest tests (unit + integration + adversarial)
+│   └── tests/                 # 330 pytest tests (unit + integration + adversarial)
 ├── frontend/
 │   ├── app/                   # Next.js app router
 │   └── src/

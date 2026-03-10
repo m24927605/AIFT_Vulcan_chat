@@ -136,11 +136,11 @@ LLMClient (Protocol)
 | Secret-redacted logging | Raw exception strings in logs | Reduces the chance of Telegram/API credential leakage through server logs |
 | Deterministic greeting / math fast-path | Send all low-risk queries through LLM planner | Improves stability for simple inputs and reduces unnecessary search/LLM surface area |
 | Telegram OTP linking (`telegram_link_codes`) | Direct `link-telegram` by chat ID | Prevents accidental/malicious mis-linking by requiring Telegram-side possession proof (`/start` -> `Start Linking` numeric keypad or `/link <code>`) |
-| 2-Agent (Planner+Executor) over single agent | Single LLM call with tools | Separation of concerns: Planner optimizes search decision, Executor optimizes answer quality |
+| 3-Agent (Planner+Executor+Verifier) over single agent | Single LLM call with tools | Separation of concerns: Planner optimizes search decision, Executor optimizes answer quality, Verifier checks hallucination/consistency |
 | Deterministic pre-check | Trust LLM fully | Safety net for must-search temporal queries; hybrid approach preserves flexibility |
 | Request ID tracing | No tracing | Every request gets a unique ID propagated through all log messages for debugging |
 | Storage-backed IP rate limiting | In-memory limiter only | Protects `/api/chat` from abuse with shared SQLite-backed enforcement across compatible app instances |
-| Telegram retry with backoff | Fire-and-forget | 3 attempts with exponential backoff (1s, 2s, 4s) for transient network failures |
+| Telegram retry with backoff | Fire-and-forget | 3 attempts with exponential backoff (1s, 2s between attempts) for transient network failures |
 | LLM fallback (OpenAI→Anthropic) | Single provider | Eliminates single-point-of-failure; auto-switches on timeout/429/5xx |
 | Tavily `include_answer` | Raw results only | Tavily's AI-generated answer is injected as result `[1]`, improving numerical accuracy for temporal queries (stock prices, exchange rates) |
 | Executor strict quoting prompt | Generic "be accurate" | Numbers must be quoted exactly as they appear in search results; prevents LLM from rounding, averaging, or hallucinating figures |
