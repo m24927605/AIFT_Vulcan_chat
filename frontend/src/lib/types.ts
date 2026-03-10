@@ -35,12 +35,20 @@ export interface CitationsData {
   citations: CitationItem[];
 }
 
+export interface VerificationData {
+  is_consistent: boolean;
+  confidence: number;
+  issues: string[];
+  suggestion: string;
+}
+
 export type SSEEvent =
   | { event: "planner"; data: PlannerData }
   | { event: "searching"; data: SearchingData }
   | { event: "chunk"; data: ChunkData }
   | { event: "citations"; data: CitationsData }
   | { event: "search_failed"; data: { message: string } }
+  | { event: "verification"; data: VerificationData }
   | { event: "done"; data: Record<string, unknown> }
   | { event: "error"; data: { message: string } };
 
