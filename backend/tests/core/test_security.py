@@ -3,6 +3,7 @@ import pytest
 from app.core.models.schemas import SearchResult
 from app.core.security import (
     _classify_source_kind,
+    filter_renderable_results,
     guard_model_output,
     normalize_search_results,
     sanitize_search_result,
@@ -103,3 +104,38 @@ class TestGuardModelOutput:
     def test_passes_safe_text(self):
         text = "The stock price is $189.50 today."
         assert guard_model_output(text) == text
+
+
+# ---------------------------------------------------------------------------
+# filter_renderable_results
+# ---------------------------------------------------------------------------
+
+class TestFilterRenderableResults:
+    def test_keeps_url_items(self):
+        results = [
+            SearchResult(title="Web", url="https://example.com", content="text", score=0.9),
+            SearchResult(title="Tavily AI Answer", url="", content="summary", score=0.5),
+            SearchResult(title="Also web", url="https://other.com", content="more", score=0.8),
+        ]
+        filtered = filter_renderable_results(results)
+        assert len(filtered) == 2
+        assert all(r.url for r in filtered)
+
+    def test_empty_input(self):
+        assert filter_renderable_results([]) == []
+
+    def test_all_no_url(self):
+        results = [
+            SearchResult(title="AI Answer", url="", content="summary", score=0.5),
+        ]
+        assert filter_renderable_results(results) == []
+
+    def test_preserves_order(self):
+        results = [
+            SearchResult(title="First", url="https://first.com", content="a", score=0.9),
+            SearchResult(title="No URL", url="", content="b", score=0.5),
+            SearchResult(title="Second", url="https://second.com", content="c", score=0.8),
+        ]
+        filtered = filter_renderable_results(results)
+        assert filtered[0].title == "First"
+        assert filtered[1].title == "Second"

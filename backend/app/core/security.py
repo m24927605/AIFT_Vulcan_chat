@@ -134,3 +134,8 @@ def _classify_source_kind(result: SearchResult) -> str:
             return "market_data"
         return "ai_summary"
     return "web"
+
+
+def filter_renderable_results(results: list[SearchResult]) -> list[SearchResult]:
+    """Keep only search results that have a URL and can be rendered as citations."""
+    return [r for r in results if r.url]
