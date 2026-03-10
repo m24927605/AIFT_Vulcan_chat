@@ -21,7 +21,7 @@ class FugleSource(BaseModel):
 class FinnhubSource(BaseModel):
     type: str = Field(
         ...,
-        pattern="^(finnhub_quote|finnhub_candles|finnhub_forex|finnhub_profile|finnhub_financials|finnhub_news|finnhub_earnings|finnhub_price_target|finnhub_recommendation|finnhub_insider)$",
+        pattern="^(finnhub_quote|finnhub_candles|finnhub_profile|finnhub_financials|finnhub_news|finnhub_earnings|finnhub_price_target|finnhub_recommendation|finnhub_insider)$",
     )
     symbol: str = Field(..., min_length=1, max_length=20)
     timeframe: str | None = Field(None, pattern="^(1|5|15|30|60|D|W|M)$")
@@ -29,12 +29,17 @@ class FinnhubSource(BaseModel):
     to_date: str | None = None
 
 
+class RterInfoSource(BaseModel):
+    type: str = Field("rter_forex", pattern="^rter_forex$")
+    symbol: str = Field(..., min_length=1, max_length=10)
+
+
 class PlannerDecision(BaseModel):
     needs_search: bool
     reasoning: str
     search_queries: list[str] = Field(default_factory=list, max_length=3)
     query_type: str = Field(..., pattern="^(temporal|factual|conversational)$")
-    data_sources: list[FugleSource | FinnhubSource] = Field(default_factory=list)
+    data_sources: list[FugleSource | FinnhubSource | RterInfoSource] = Field(default_factory=list)
 
 
 class Citation(BaseModel):

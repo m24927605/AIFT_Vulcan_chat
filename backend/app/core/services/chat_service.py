@@ -12,7 +12,7 @@ from app.core.services.llm_client import LLMClient
 from app.core.services.search_service import SearchService
 from app.core.services.fugle_service import FugleService
 from app.core.services.finnhub_service import FinnhubService
-from app.core.models.schemas import SearchResult, FugleSource, FinnhubSource
+from app.core.models.schemas import SearchResult, FugleSource, FinnhubSource, RterInfoSource
 from app.core.models.events import (
     ChatEvent,
     PlannerEvent,
@@ -110,17 +110,17 @@ class ChatService:
             if not decision.search_queries:
                 decision.search_queries = [message]
 
-        # Deterministic override: inject finnhub_forex if query is about exchange rates
+        # Deterministic override: inject RterInfoSource if query is about exchange rates
         if _FOREX_PATTERN.search(message) and self._finnhub:
             has_forex = any(
-                isinstance(src, FinnhubSource) and src.type == "finnhub_forex"
+                isinstance(src, RterInfoSource)
                 for src in (decision.data_sources or [])
             )
             if not has_forex:
                 base = _detect_forex_base(message)
-                logger.info(f"Rule-based override: injecting finnhub_forex('{base}') for '{message[:50]}'")
+                logger.info(f"Rule-based override: injecting forex('{base}') for '{message[:50]}'")
                 decision.data_sources = list(decision.data_sources or [])
-                decision.data_sources.append(FinnhubSource(type="finnhub_forex", symbol=base))
+                decision.data_sources.append(RterInfoSource(symbol=base))
 
         yield PlannerEvent(
             needs_search=decision.needs_search,
@@ -215,11 +215,18 @@ class ChatService:
                     text = await self._fugle.get_quote(src.symbol)
                 elif src.type == "fugle_historical":
                     text = await self._fugle.get_historical(src.symbol, src.timeframe or "D")
+            elif isinstance(src, RterInfoSource) and self._finnhub:
+                text = await self._finnhub.get_forex_rates(src.symbol)
             elif isinstance(src, FinnhubSource) and self._finnhub:
                 text = await self._dispatch_finnhub(src)
 
             if text:
-                provider = "Fugle" if isinstance(src, FugleSource) else "Finnhub"
+                if isinstance(src, FugleSource):
+                    provider = "Fugle"
+                elif isinstance(src, RterInfoSource):
+                    provider = "tw.rter.info"
+                else:
+                    provider = "Finnhub"
                 results.append(SearchResult(
                     title=f"{provider}: {src.symbol} {src.type}",
                     url="",
@@ -232,7 +239,6 @@ class ChatService:
         dispatch = {
             "finnhub_quote": lambda: self._finnhub.get_quote(src.symbol),
             "finnhub_candles": lambda: self._finnhub.get_candles(src.symbol, src.timeframe or "D", src.from_date, src.to_date),
-            "finnhub_forex": lambda: self._finnhub.get_forex_rates(src.symbol),
             "finnhub_profile": lambda: self._finnhub.get_profile(src.symbol),
             "finnhub_financials": lambda: self._finnhub.get_financials(src.symbol),
             "finnhub_news": lambda: self._finnhub.get_news(src.symbol, src.from_date, src.to_date),

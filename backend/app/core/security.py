@@ -130,7 +130,7 @@ def _extract_metadata(title: str, excerpt: str) -> tuple[str, str]:
 
 def _classify_source_kind(result: SearchResult) -> str:
     if not result.url:
-        if result.title.startswith(("Fugle:", "Finnhub:")):
+        if result.title.startswith(("Fugle:", "Finnhub:", "tw.rter.info:")):
             return "market_data"
         return "ai_summary"
     return "web"

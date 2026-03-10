@@ -20,8 +20,10 @@
 │             │                          │  │     ↓ SearchResult[]        │   │
 │             │                          │  │  4b. Fugle Service (TW stk) │   │
 │             │                          │  │     ↓ FugleQuote            │   │
-│             │                          │  │  4c. Finnhub Service (US+)  │   │
+│             │                          │  │  4c. Finnhub Service (US stk)│   │
 │             │                          │  │     ↓ FinnhubSource         │   │
+│             │                          │  │  4d. tw.rter.info (forex)   │   │
+│             │                          │  │     ↓ RterInfoSource        │   │
 │             │                          │  │  5. Security Normalizer      │   │
 │             │                          │  │     ↓ NormalizedSearchResult│   │
 │             │                          │  │  6. Executor Agent           │   │
@@ -145,4 +147,5 @@ LLMClient (Protocol)
 | Tavily `include_answer` | Raw results only | Tavily's AI-generated answer is injected as result `[1]`, improving numerical accuracy for temporal queries (stock prices, exchange rates) |
 | Executor strict quoting prompt | Generic "be accurate" | Numbers must be quoted exactly as they appear in search results; prevents LLM from rounding, averaging, or hallucinating figures |
 | Fugle for TW stocks | Tavily only | Exchange-grade data for Taiwan stocks; Tavily supplements with news/analysis |
-| Finnhub API | Alpha Vantage, Yahoo Finance | Free tier with 60 calls/min, comprehensive endpoints (quote, candles, forex, financials, news, earnings, price target, recommendation, insider), official Python SDK |
+| Finnhub API | Alpha Vantage, Yahoo Finance | Free tier with 60 calls/min, comprehensive endpoints (quote, candles, financials, news, earnings, price target, recommendation, insider), official Python SDK |
+| tw.rter.info for forex | Finnhub forex (paid-only) | Free, no API key needed, real-time exchange rates for major currency pairs |

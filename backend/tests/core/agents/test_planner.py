@@ -118,23 +118,23 @@ async def test_planner_outputs_finnhub_source_for_us_stock(planner, mock_llm):
 
 
 @pytest.mark.asyncio
-async def test_planner_outputs_finnhub_forex(planner, mock_llm):
+async def test_planner_outputs_rter_forex(planner, mock_llm):
     mock_llm.chat.return_value = json.dumps({
         "needs_search": True,
         "reasoning": "Forex rate query",
         "search_queries": ["USD TWD exchange rate"],
         "query_type": "temporal",
-        "data_sources": [{"type": "finnhub_forex", "symbol": "USD"}],
+        "data_sources": [{"type": "rter_forex", "symbol": "USD"}],
     })
     decision = await planner.plan("美金換台幣匯率多少？")
-    assert decision.data_sources[0].type == "finnhub_forex"
+    assert decision.data_sources[0].type == "rter_forex"
     assert decision.data_sources[0].symbol == "USD"
 
 
-def test_planner_prompt_contains_finnhub_instructions():
+def test_planner_prompt_contains_data_source_instructions():
     from app.core.agents.planner import PLANNER_SYSTEM_PROMPT
     assert "finnhub_quote" in PLANNER_SYSTEM_PROMPT
-    assert "finnhub_forex" in PLANNER_SYSTEM_PROMPT
+    assert "rter_forex" in PLANNER_SYSTEM_PROMPT
     assert "finnhub_candles" in PLANNER_SYSTEM_PROMPT
 
 

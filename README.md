@@ -53,7 +53,7 @@ Async Deep Analysis (Celery + Redis)
 
 ### 3-Agent Pipeline
 
-- **Planner Agent** (temp 0.1): Analyzes user queries to decide if web search is needed. Classifies queries as temporal, factual, or conversational, generates optimized search keywords, and routes to specialized data sources (Fugle for Taiwan stocks, Finnhub for US stocks and forex).
+- **Planner Agent** (temp 0.1): Analyzes user queries to decide if web search is needed. Classifies queries as temporal, factual, or conversational, generates optimized search keywords, and routes to specialized data sources (Fugle for Taiwan stocks, Finnhub for US stocks, tw.rter.info for forex).
 - **Executor Agent** (temp 0.7): Synthesizes answers from search results (when available) or model knowledge. Generates responses with citation markers `[1]`, `[2]` and streams them via SSE. Enforces exact numerical quoting from sources — never rounds or estimates.
 - **Verifier Agent** (temp 0.1): Post-generation quality gate that checks every number, statistic, and percentage in the Executor's answer against the original search results. Reports consistency score, specific issues, and remediation suggestions. Only activated when search results are available.
 
@@ -73,7 +73,8 @@ User Query
   ├─ [Parallel] Fetch data sources
   │   ├─ Tavily web search
   │   ├─ Fugle (Taiwan stocks)
-  │   └─ Finnhub (US/global stocks, forex)
+  │   ├─ Finnhub (US/global stocks)
+  │   └─ tw.rter.info (forex/exchange rates)
   │
   ├─ [Security] Sanitize + normalize results (schema extraction)
   │
@@ -131,6 +132,7 @@ In addition, if the Planner fails to parse its own JSON output, low-risk queries
 | Search | Tavily API |
 | Taiwan Stock Data | Fugle MarketData API |
 | US/Global Stock Data | Finnhub API |
+| Forex / Exchange Rates | tw.rter.info API |
 | Task Queue | Celery + Redis |
 | Observability | Langfuse (LLM tracing), structured logging |
 | Streaming | Server-Sent Events (SSE) |
@@ -148,7 +150,7 @@ In addition, if the Planner fails to parse its own JSON output, low-risk queries
 - Tavily API key (free tier: https://tavily.com)
 - Anthropic API key (optional, for LLM fallback)
 - Fugle MarketData API key (optional, for Taiwan stock data: https://developer.fugle.tw)
-- Finnhub API key (optional, for US/global stock + forex data: https://finnhub.io)
+- Finnhub API key (optional, for US/global stock data: https://finnhub.io)
 - Redis (optional, for Celery async deep analysis)
 
 ### Backend Setup
@@ -381,7 +383,7 @@ Run with `python -m evals.run_planner_eval` (live) or `--dry-run` (dataset stats
 ## Testing
 
 ```bash
-# Backend tests (330 tests — unit + integration + E2E, all mocked, no API keys needed)
+# Backend tests (341 tests — unit + integration + E2E, all mocked, no API keys needed)
 make test-backend
 
 # Frontend tests (unit + integration)
@@ -433,7 +435,7 @@ Push to main ──┬── Backend Tests (pytest, ≥90 test gate) ──┬�
 | `FALLBACK_LLM` | Fallback LLM provider: `openai`, `anthropic`, or `""` to disable (default: anthropic) | No |
 | `TAVILY_API_KEY` | Tavily search API key | Yes |
 | `FUGLE_API_KEY` | Fugle MarketData API key (for TW stock data) | No |
-| `FINNHUB_API_KEY` | Finnhub API key (for US/global stock + forex data) | No |
+| `FINNHUB_API_KEY` | Finnhub API key (for US/global stock data) | No |
 | `TELEGRAM_BOT_TOKEN` | Telegram bot token | For Telegram |
 | `TELEGRAM_ADMIN_IDS` | Admin chat IDs (JSON array) | For Telegram |
 | `MODE` | Run mode: `web`, `telegram`, or `all` | No |

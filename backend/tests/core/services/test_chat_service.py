@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 from app.core.agents.verifier import VerificationResult
 from app.core.security import guard_model_output
 from app.core.services.chat_service import ChatService
-from app.core.models.schemas import PlannerDecision, SearchResult, FugleSource, FinnhubSource
+from app.core.models.schemas import PlannerDecision, SearchResult, FugleSource, FinnhubSource, RterInfoSource
 from app.core.models.events import (
     PlannerEvent,
     SearchingEvent,
@@ -773,8 +773,8 @@ async def test_chat_service_skips_verifier_when_no_search(chat_service):
 
 
 @pytest.mark.asyncio
-async def test_forex_override_injects_finnhub_forex(mock_llm):
-    """When query mentions 匯率 and planner omits data_sources, inject finnhub_forex."""
+async def test_forex_override_injects_rter_forex(mock_llm):
+    """When query mentions 匯率 and planner omits data_sources, inject RterInfoSource."""
     from unittest.mock import MagicMock
 
     service = _mock_verifier(ChatService(
@@ -810,7 +810,7 @@ async def test_forex_override_injects_finnhub_forex(mock_llm):
 
 @pytest.mark.asyncio
 async def test_forex_override_skips_when_already_present(mock_llm):
-    """When planner already includes finnhub_forex, don't duplicate."""
+    """When planner already includes rter_forex, don't duplicate."""
     from unittest.mock import MagicMock
 
     service = _mock_verifier(ChatService(
@@ -821,7 +821,7 @@ async def test_forex_override_skips_when_already_present(mock_llm):
         reasoning="Forex query",
         search_queries=["EUR USD rate"],
         query_type="temporal",
-        data_sources=[FinnhubSource(type="finnhub_forex", symbol="EUR")],
+        data_sources=[RterInfoSource(symbol="EUR")],
     )
 
     async def mock_execute(*args, **kwargs):
