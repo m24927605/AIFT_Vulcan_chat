@@ -13,7 +13,7 @@ from app.core.security import (
     normalize_search_results,
     sanitize_search_results,
 )
-from app.core.pipelines.secure_answer import secure_answer_pipeline
+from app.core.pipelines.secure_answer import get_search_failed_message, secure_answer_pipeline
 from app.core.services.llm_client import LLMClient
 from app.core.services.search_service import SearchService
 from app.core.services.fugle_service import FugleService
@@ -168,7 +168,7 @@ class ChatService:
         if search_failed:
             logger.warning("Search returned 0 renderable results for temporal query: '%s'", message[:80])
             yield SearchFailedEvent(
-                message="Web search returned no results. Unable to retrieve verified information."
+                message=get_search_failed_message(message),
             )
 
         # Secured answer pipeline (refusal / guarded generation / verification)

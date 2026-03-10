@@ -205,6 +205,8 @@ async def test_search_required_but_empty_returns_refusal(chat_service):
 
         failed_events = [e for e in events if isinstance(e, SearchFailedEvent)]
         assert len(failed_events) == 1
+        # English query → English search_failed warning
+        assert "no results" in failed_events[0].message.lower() or "unable" in failed_events[0].message.lower()
 
         chunk_events = [e for e in events if isinstance(e, ChunkEvent)]
         assert len(chunk_events) == 1
@@ -216,7 +218,7 @@ async def test_search_required_but_empty_returns_refusal(chat_service):
 
 @pytest.mark.asyncio
 async def test_search_required_but_empty_returns_chinese_refusal(chat_service):
-    """Chinese query with empty search results gets Chinese refusal."""
+    """Chinese query with empty search results gets Chinese refusal and warning."""
     planner_decision = PlannerDecision(
         needs_search=True,
         reasoning="Stock price query",
@@ -237,6 +239,11 @@ async def test_search_required_but_empty_returns_chinese_refusal(chat_service):
         events = []
         async for event in chat_service.process_message("台積電今天股價多少"):
             events.append(event)
+
+        # Chinese query → Chinese search_failed warning
+        failed_events = [e for e in events if isinstance(e, SearchFailedEvent)]
+        assert len(failed_events) == 1
+        assert "搜尋" in failed_events[0].message or "結果" in failed_events[0].message
 
         chunk_events = [e for e in events if isinstance(e, ChunkEvent)]
         assert len(chunk_events) == 1

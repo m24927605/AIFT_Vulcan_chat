@@ -21,10 +21,18 @@ _REFUSAL_EN = (
 )
 _REFUSAL_ZH = "目前無法取得經過驗證的最新資訊，請稍後再試。"
 
+_SEARCH_FAILED_EN = "Web search returned no results. Unable to retrieve verified information."
+_SEARCH_FAILED_ZH = "網路搜尋未回傳任何結果，無法取得經過驗證的資訊。"
 
-def _is_cjk_query(message: str) -> bool:
+
+def is_cjk_query(message: str) -> bool:
     """Return True if the message contains any CJK Unified Ideograph characters."""
     return bool(_CJK_PATTERN.search(message))
+
+
+def get_search_failed_message(message: str) -> str:
+    """Return a localized search-failed warning matching the user's language."""
+    return _SEARCH_FAILED_ZH if is_cjk_query(message) else _SEARCH_FAILED_EN
 
 
 async def secure_answer_pipeline(
@@ -42,7 +50,7 @@ async def secure_answer_pipeline(
     """
     # --- Refusal gate ---
     if needs_search and not normalized_results:
-        refusal_message = _REFUSAL_ZH if _is_cjk_query(message) else _REFUSAL_EN
+        refusal_message = _REFUSAL_ZH if is_cjk_query(message) else _REFUSAL_EN
         return {
             "refused": True,
             "refusal_message": refusal_message,

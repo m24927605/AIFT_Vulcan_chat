@@ -119,3 +119,51 @@ async def test_broadcast_initializes_and_closes_storage():
         chat_ids = await storage2.get_subscriber_chat_ids()
         assert chat_ids == [111]
         await storage2.close()
+
+
+def test_broadcast_route_with_real_storage(client):
+    """Integration test: broadcast route using real SubscriptionStorage, no storage mocks."""
+    from app.telegram.storage import SubscriptionStorage
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "broadcast_test.db")
+
+        # Pre-populate the DB with subscribers
+        import asyncio
+
+        async def _seed():
+            s = SubscriptionStorage(db_path=db_path)
+            await s.initialize()
+            await s.add(chat_id=111, topic="news", frequency="daily", time="09:00")
+            await s.add(chat_id=222, topic="stocks", frequency="daily", time="09:00")
+            await s.close()
+
+        asyncio.get_event_loop().run_until_complete(_seed())
+
+        # Patch only: bot (don't send real Telegram messages), auth, and DB path
+        mock_bot = AsyncMock()
+        with (
+            patch("app.web.routes.notify.get_bot", return_value=mock_bot),
+            patch("app.core.auth.settings") as mock_settings,
+            patch(
+                "app.web.routes.notify.SubscriptionStorage",
+                lambda: SubscriptionStorage(db_path=db_path),
+            ),
+        ):
+            mock_settings.api_secret_key = ""
+            mock_settings.frontend_url = "http://localhost:3000"
+
+            response = client.post("/api/notify/broadcast", json={
+                "message": "Real storage broadcast",
+                "target": "subscribers",
+            }, headers={"X-API-Key": "any"})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["sent_count"] == 2
+        # Verify bot was called with both subscriber chat_ids
+        sent_ids = sorted(
+            call.kwargs["chat_id"]
+            for call in mock_bot.send_message.call_args_list
+        )
+        assert sent_ids == [111, 222]
