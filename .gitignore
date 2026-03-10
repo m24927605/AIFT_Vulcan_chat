@@ -42,5 +42,8 @@ test-results/
 # Lock files (uv)
 uv.lock
 
+# Interview materials (private)
+interview/
+
 # Claude
 .claude/
