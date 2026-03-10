@@ -193,7 +193,7 @@ class TestChatE2E:
         """
         Scenario: User asks about a Taiwan stock → Planner outputs data_sources
         → Fugle + Tavily fetched in parallel → Executor streams answer → DB persists.
-        Fugle results appear first, have no URL (excluded from citations).
+        Fugle results appear first, have no URL (rendered as data source citations).
         """
         conv_response = await client.post(
             "/api/conversations",
@@ -292,12 +292,13 @@ class TestChatE2E:
         assert "[1]" in full_content
         assert "[2]" in full_content
 
-        # Citations: only Tavily result (Fugle has url="" so excluded by build_citations)
+        # Citations: Fugle (data source, url="") + Tavily web result
         citation_events = [e for e in events if e["event"] == "citations"]
         assert len(citation_events) == 1
         citations = citation_events[0]["data"]["citations"]
-        assert len(citations) == 1
-        assert citations[0]["url"] == "https://news.example.com/tsmc"
+        assert len(citations) == 2
+        assert citations[0]["title"].startswith("Fugle:")
+        assert citations[1]["url"] == "https://news.example.com/tsmc"
 
         # Done event
         assert event_types[-1] == "done"
@@ -314,7 +315,7 @@ class TestChatE2E:
         """
         Scenario: User asks about US stock → Planner outputs finnhub data_sources
         → Finnhub + Tavily fetched in parallel → Executor streams answer → DB persists.
-        Finnhub results have url="" (excluded from citations).
+        Finnhub results have url="" (rendered as data source citations).
         """
         from app.core.models.schemas import FinnhubSource
 
@@ -403,12 +404,13 @@ class TestChatE2E:
         assert "[1]" in full_content
         assert "[2]" in full_content
 
-        # Citations: only Tavily (Finnhub has url="")
+        # Citations: Finnhub (data source, url="") + Tavily web result
         citation_events = [e for e in events if e["event"] == "citations"]
         assert len(citation_events) == 1
         citations = citation_events[0]["data"]["citations"]
-        assert len(citations) == 1
-        assert citations[0]["url"] == "https://news.example.com/aapl"
+        assert len(citations) == 2
+        assert citations[0]["title"].startswith("Finnhub:")
+        assert citations[1]["url"] == "https://news.example.com/aapl"
 
         assert event_types[-1] == "done"
 
