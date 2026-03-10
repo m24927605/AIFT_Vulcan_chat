@@ -3,7 +3,7 @@
 ## Running Tests
 
 ```bash
-# Backend tests (341 tests — unit + integration + E2E, all mocked, no API keys needed)
+# Backend tests (361 tests — unit + integration + E2E, all mocked, no API keys needed)
 make test-backend
 
 # Frontend tests (unit + integration)

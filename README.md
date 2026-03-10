@@ -76,17 +76,19 @@ User Query
   │   ├─ Finnhub (US/global stocks)
   │   └─ tw.rter.info (forex/exchange rates)
   │
-  ├─ [Security] Sanitize + normalize results (schema extraction)
+  ├─ [Security] Sanitize → filter AI summaries → normalize (schema extraction)
+  │
+  ├─ [Gate] Refusal check: if search needed but no results → localized refusal, stop
   │
   ├─ [LLM] Executor Agent (streaming) → answer with citations
-  │   ├─ Guard output (redact secrets before each chunk)
+  │   ├─ guard_model_output on every chunk (redact secrets)
   │   └─ Trace to Langfuse
   │
   ├─ [LLM] Verifier Agent (if search was used)
   │   ├─ Check: numbers, citations, source consistency
   │   └─ Trace to Langfuse
   │
-  └─ Emit SSE: planner → searching → chunks → verification → citations → done
+  └─ Emit SSE: planner → searching → [search_failed?] → chunks → verification → citations → done
 ```
 
 > See [docs/architecture.md](docs/architecture.md) for end-to-end flow details, real request/response examples, LLM client abstraction, and design decisions.
@@ -98,7 +100,7 @@ Defense-in-depth across 6 layers — the full breakdown is in [docs/security.md]
 | Layer | Key Controls |
 |-------|-------------|
 | **LLM Input** | Prompt injection pattern scanning + schema extraction (raw text never reaches LLM) + prompt boundary enforcement |
-| **LLM Output** | Secret egress guard (redacts `sk-*`, `sess-*`, bearer tokens before streaming) + Verifier Agent cross-checks numbers against sources |
+| **LLM Output** | Secret egress guard (redacts `sk-*`, `sess-*`, bearer tokens before streaming) + Verifier Agent cross-checks numbers against sources. Shared `secure_answer_pipeline` ensures chat and deep analysis apply identical security controls |
 | **Adversarial Testing** | 28-case red-team suite across 8 attack categories (jailbreak, prompt leaking, data exfiltration, indirect injection, encoding bypass) with automated CI validation |
 | **Transport** | CORS lockdown, HSTS, security headers, production `API_SECRET_KEY` enforcement |
 | **Session** | `HttpOnly` cookies, UA/IP binding, 24h rotation, CSRF double-submit |
@@ -179,14 +181,14 @@ make setup-backend    # Create venv and install deps
 make setup-frontend   # Install npm deps
 make run-backend      # Start FastAPI dev server
 make run-frontend     # Start Next.js dev server
-make test-backend     # Run 341 backend tests
+make test-backend     # Run 361 backend tests
 make test-frontend    # Run frontend tests
 ```
 
 ## Testing
 
 ```bash
-make test-backend              # 341 tests (unit + integration + adversarial)
+make test-backend              # 361 tests (unit + integration + adversarial)
 make test-frontend             # Frontend unit + integration tests
 cd frontend && npm run test:e2e  # Browser E2E (Playwright)
 ```
@@ -200,10 +202,11 @@ cd frontend && npm run test:e2e  # Browser E2E (Playwright)
 │   ├── app/
 │   │   ├── core/
 │   │   │   ├── agents/        # Planner + Executor + Verifier agents
+│   │   │   ├── pipelines/     # Shared secure answer pipeline (refusal gate, output guard, verification)
 │   │   │   ├── services/      # Chat, LLM (OpenAI/Anthropic/Fallback), Search, Tracing
 │   │   │   ├── tasks/         # Celery tasks + deep analysis pipeline
 │   │   │   ├── models/        # Pydantic schemas & SSE events
-│   │   │   ├── security.py    # Input sanitization, output guard, schema extraction
+│   │   │   ├── security.py    # Input sanitization, output guard, schema extraction, result pre-filtering
 │   │   │   └── ...            # config, storage, middleware, web_session
 │   │   ├── web/               # FastAPI app, routes, auth
 │   │   └── telegram/          # Telegram bot, handlers, sync
@@ -211,7 +214,7 @@ cd frontend && npm run test:e2e  # Browser E2E (Playwright)
 │   │   ├── adversarial_dataset.json   # 28 red-team attack cases
 │   │   ├── planner_eval_dataset.json  # 20 planner accuracy test cases
 │   │   └── run_planner_eval.py        # Planner evaluation runner
-│   └── tests/                 # 341 pytest tests
+│   └── tests/                 # 361 pytest tests
 ├── frontend/
 │   ├── app/                   # Next.js app router
 │   └── src/                   # Components, hooks, i18n, lib

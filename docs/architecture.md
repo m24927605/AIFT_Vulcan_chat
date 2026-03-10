@@ -25,9 +25,15 @@
 │             │                          │  │  4d. tw.rter.info (forex)   │   │
 │             │                          │  │     ↓ RterInfoSource        │   │
 │             │                          │  │  5. Security Normalizer      │   │
+│             │                          │  │     ↓ filter AI summaries  │   │
 │             │                          │  │     ↓ NormalizedSearchResult│   │
+│             │                          │  │  5b. Secure Answer Pipeline │   │
+│             │                          │  │     ↓ refusal gate (empty?)│   │
 │             │                          │  │  6. Executor Agent           │   │
+│             │                          │  │     ↓ guard_model_output   │   │
 │             │                          │  │     ↓ SSE stream            │   │
+│             │                          │  │  7. Verifier Agent           │   │
+│             │                          │  │     ↓ consistency check    │   │
 └─────────────┘                          │  │                              │   │
                                          │  │  LLMClient (primary+fallback)│   │
                                          │  │  OpenAI GPT-4o ↔ Anthropic  │   │
@@ -49,9 +55,11 @@ A user asks **"台積電今天股價多少？"** (What is TSMC's stock price tod
 | 2 | **Planner Agent** | Analyzes query → `{ needs_search: true, query_type: "temporal", search_queries: ["TSMC stock price today", "台積電 股價"] }` |
 | 3 | **Deterministic Pre-check** | Confirms: "股價" matches temporal pattern → no override needed (Planner already correct) |
 | 4 | **Search Service** | Executes 2 Tavily queries in parallel → returns 8 deduplicated results |
-| 5 | **Security Normalizer** | Sanitizes external results, extracts constrained schema fields (`excerpt`, `facts`, `numbers`, metadata), and strips prompt-injection patterns before LLM synthesis |
-| 6 | **Executor Agent** | Synthesizes answer from normalized results → streams tokens via SSE with `[1]`, `[2]` citation markers |
-| 7 | **Frontend** | Renders streaming text + planner thinking + search progress + citation cards |
+| 5 | **Security Normalizer** | Sanitizes external results, filters out AI summaries (keeps market data sources), extracts constrained schema fields (`excerpt`, `facts`, `numbers`, metadata), and strips prompt-injection patterns |
+| 5b | **Secure Answer Pipeline** | Shared refusal gate: if search was required but no results remain after filtering, emits a localized refusal message and stops (no LLM fallback to stale knowledge) |
+| 6 | **Executor Agent** | Synthesizes answer from normalized results → every streaming chunk passes through `guard_model_output` (secret redaction) before SSE emission |
+| 7 | **Verifier Agent** | Cross-checks every number in the Executor's answer against the original search results; emits consistency score via `verification` SSE event |
+| 8 | **Frontend** | Renders streaming text + planner thinking + search progress + citation cards (data-source citations without URLs render as non-clickable cards) |
 
 For low-risk inputs, the flow is shorter:
 
@@ -134,6 +142,9 @@ LLMClient (Protocol)
 | CSRF token + `Origin` verification | Cookie session without CSRF | Prevents cross-site state-changing requests in cross-origin deployment |
 | Security headers middleware | No browser hardening headers | Adds `HSTS`, `X-Frame-Options`, `nosniff`, `Referrer-Policy`, and `Permissions-Policy` |
 | Schema extraction before Executor | Pass raw search text directly to LLM | Reduces prompt-injection surface while preserving useful facts, numbers, and source metadata |
+| Shared secure answer pipeline | Duplicate security logic in chat + analysis | `secure_answer_pipeline` ensures both `/api/chat` and `/api/analysis` apply the same refusal gate, `guard_model_output`, and Verifier checks — preventing security drift |
+| Pre-filter AI summaries, keep market data | Filter all no-URL results | `filter_renderable_results` removes AI summaries but keeps Fugle/Finnhub/tw.rter.info data sources (identified by title prefix), ensuring citation indices align across LLM prompt, verifier, citations, and frontend |
+| Refuse on empty temporal search | Fall back to model knowledge | When a temporal query's search returns no results, the system refuses with a localized message instead of answering from potentially stale LLM knowledge |
 | Secret-egress output guard | Trust raw model output | Redacts secret-like values before streaming them back to users |
 | Secret-redacted logging | Raw exception strings in logs | Reduces the chance of Telegram/API credential leakage through server logs |
 | Deterministic greeting / math fast-path | Send all low-risk queries through LLM planner | Improves stability for simple inputs and reduces unnecessary search/LLM surface area |

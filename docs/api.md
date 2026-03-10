@@ -65,12 +65,34 @@ Asynchronous multi-round analysis powered by Celery task queue. The worker itera
 }
 ```
 
-**GET Response:**
+**GET Response (success):**
 ```json
 {
   "task_id": "abc-123",
   "status": "SUCCESS",
-  "result": { "answer": "...", "rounds": 3 }
+  "result": {
+    "answer": "...",
+    "rounds": 3,
+    "verification": {
+      "is_consistent": true,
+      "confidence": 0.95,
+      "issues": [],
+      "suggestion": null
+    }
+  }
+}
+```
+
+**GET Response (refused — search required but returned empty):**
+```json
+{
+  "task_id": "abc-123",
+  "status": "SUCCESS",
+  "result": {
+    "status": "refused",
+    "answer": "目前無法取得經過驗證的最新資訊，請稍後再試。",
+    "rounds": 2
+  }
 }
 ```
 
@@ -81,7 +103,7 @@ Task ownership is persisted in SQLite, so it survives process restarts and is co
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | POST | `/api/notify` | `X-API-Key` | Send notification via Telegram |
-| POST | `/api/notify/broadcast` | `X-API-Key` | Broadcast to all subscribers |
+| POST | `/api/notify/broadcast` | `X-API-Key` | Broadcast to subscribers (target must be `subscribers`) |
 
 ## GET /api/health
 

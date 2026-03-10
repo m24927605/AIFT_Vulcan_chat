@@ -34,6 +34,8 @@ The system implements defense-in-depth security across six layers: transport, se
 
 - **Secret egress guard**: Before every response chunk is sent to the client, it is scanned for secret-like patterns — OpenAI keys (`sk-*`), session tokens (`sess-*`), base64 blobs (32+ chars), API key assignments (`api_key=...`), and bearer tokens. Matches are replaced with `[REDACTED: sensitive content removed]`.
 - **Verifier Agent**: After the Executor generates an answer (when search results are present), the Verifier Agent independently checks every number, statistic, and percentage against the original sources. This catches hallucinated data that could mislead users, and surfaces a confidence score and issue list via the `verification` SSE event.
+- **Shared secure answer pipeline**: Both `/api/chat` (streaming) and `/api/analysis` (async deep analysis) share the same `secure_answer_pipeline` module (`app.core.pipelines.secure_answer`), ensuring identical security controls — refusal gate, `guard_model_output` on every chunk, and Verifier Agent cross-check. This prevents security drift between the two code paths.
+- **Temporal refusal gate**: When a query requires up-to-date information (temporal/stock/forex) but search returns no results, the system refuses with a localized message instead of falling back to potentially stale LLM knowledge. The refusal message is localized (Chinese for CJK queries, English otherwise).
 
 ## Layer 6: Operational Security & Observability
 
