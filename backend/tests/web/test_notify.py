@@ -1,3 +1,6 @@
+import os
+import tempfile
+
 import pytest
 from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
@@ -46,7 +49,7 @@ def test_notify_rejects_missing_api_key(client):
             "chat_id": 123,
             "message": "Test",
         })
-        assert response.status_code == 403  # missing header → None ≠ secret
+        assert response.status_code == 403  # missing header -> None != secret
 
 
 def test_notify_rejects_wrong_api_key(client):
@@ -62,17 +65,17 @@ def test_notify_rejects_wrong_api_key(client):
 def test_broadcast_sends_to_subscribers(client):
     with (
         patch("app.web.routes.notify.get_bot") as mock_get_bot,
-        patch("app.web.routes.notify.get_storage") as mock_get_storage,
+        patch("app.web.routes.notify.SubscriptionStorage") as MockStorageCls,
         patch("app.core.auth.settings") as mock_settings,
     ):
-        mock_settings.api_secret_key = ""  # dev mode: no auth
+        mock_settings.api_secret_key = ""
         mock_settings.frontend_url = "http://localhost:3000"
         mock_bot = AsyncMock()
         mock_get_bot.return_value = mock_bot
 
         mock_storage = AsyncMock()
         mock_storage.get_subscriber_chat_ids.return_value = [123, 456]
-        mock_get_storage.return_value = mock_storage
+        MockStorageCls.return_value = mock_storage
 
         response = client.post("/api/notify/broadcast", json={
             "message": "Broadcast test",
@@ -82,3 +85,37 @@ def test_broadcast_sends_to_subscribers(client):
         assert response.status_code == 200
         data = response.json()
         assert data["sent_count"] == 2
+        mock_storage.initialize.assert_called_once()
+        mock_storage.close.assert_called_once()
+
+
+def test_broadcast_rejects_target_all(client):
+    """target=all is no longer accepted."""
+    with patch("app.core.auth.settings") as mock_settings:
+        mock_settings.api_secret_key = ""
+        mock_settings.frontend_url = "http://localhost:3000"
+        response = client.post("/api/notify/broadcast", json={
+            "message": "Test",
+            "target": "all",
+        }, headers={"X-API-Key": "any"})
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_broadcast_initializes_and_closes_storage():
+    """Broadcast must call initialize() and close() on real storage."""
+    from app.telegram.storage import SubscriptionStorage
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_subs.db")
+        storage = SubscriptionStorage(db_path=db_path)
+        await storage.initialize()
+        await storage.add(chat_id=111, topic="test", frequency="daily", time="09:00")
+        await storage.close()
+
+        # Verify real storage path works
+        storage2 = SubscriptionStorage(db_path=db_path)
+        await storage2.initialize()
+        chat_ids = await storage2.get_subscriber_chat_ids()
+        assert chat_ids == [111]
+        await storage2.close()

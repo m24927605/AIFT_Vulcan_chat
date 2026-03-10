@@ -12,6 +12,8 @@ async def test_deep_analysis_runs_multi_step():
         side_effect=[
             '{"needs_search": true, "reasoning": "Need data", "search_queries": ["TSMC revenue 2024"], "query_type": "temporal"}',
             '{"needs_search": true, "reasoning": "Need more", "search_queries": ["TSMC Q4 earnings"], "query_type": "temporal"}',
+            # verifier response
+            '{"is_consistent": true, "issues": [], "confidence": 0.9, "suggestion": ""}',
         ]
     )
 
@@ -82,17 +84,6 @@ async def test_deep_analysis_accumulates_search_results():
 
     mock_llm = MagicMock()
     mock_llm.provider_name = "openai"
-    mock_llm.chat = AsyncMock(
-        side_effect=[
-            '{"needs_search": true, "reasoning": "r1", "search_queries": ["q1"], "query_type": "temporal"}',
-            '{"needs_search": true, "reasoning": "r2", "search_queries": ["q2"], "query_type": "temporal"}',
-        ]
-    )
-
-    async def mock_stream(*args, **kwargs):
-        yield "final answer"
-
-    mock_llm.chat_stream = MagicMock(return_value=mock_stream())
 
     call_count = 0
 
@@ -108,6 +99,20 @@ async def test_deep_analysis_accumulates_search_results():
             )
         ]
 
+    mock_llm.chat = AsyncMock(
+        side_effect=[
+            '{"needs_search": true, "reasoning": "r1", "search_queries": ["q1"], "query_type": "temporal"}',
+            '{"needs_search": true, "reasoning": "r2", "search_queries": ["q2"], "query_type": "temporal"}',
+            # verifier response
+            '{"is_consistent": true, "issues": [], "confidence": 0.9, "suggestion": ""}',
+        ]
+    )
+
+    async def mock_stream(*args, **kwargs):
+        yield "final answer"
+
+    mock_llm.chat_stream = MagicMock(return_value=mock_stream())
+
     mock_search = MagicMock()
     mock_search.search_multiple = AsyncMock(side_effect=mock_search_multiple)
 
@@ -117,3 +122,97 @@ async def test_deep_analysis_accumulates_search_results():
 
     assert result["rounds"] == 2
     assert len(result["search_results"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_deep_analysis_guards_output():
+    """Deep analysis must run guard_model_output on executor chunks."""
+    from app.core.tasks.deep_analysis import run_deep_analysis_async
+
+    mock_llm = MagicMock()
+    mock_llm.provider_name = "openai"
+    mock_llm.chat = AsyncMock(
+        side_effect=[
+            '{"needs_search": true, "reasoning": "Need data", "search_queries": ["test"], "query_type": "temporal"}',
+            # verifier response
+            '{"is_consistent": true, "issues": [], "confidence": 0.9, "suggestion": ""}',
+        ]
+    )
+
+    async def mock_stream(*args, **kwargs):
+        yield "secret key sk-1234567890abcdefghijklmnop"
+
+    mock_llm.chat_stream = MagicMock(return_value=mock_stream())
+
+    mock_search = MagicMock()
+    mock_search.search_multiple = AsyncMock(
+        return_value=[
+            MagicMock(title="Result", url="https://example.com", content="data about the topic here", score=0.9),
+        ]
+    )
+
+    result = await run_deep_analysis_async(
+        query="test", llm=mock_llm, search_service=mock_search, max_rounds=1
+    )
+
+    assert "sk-" not in result["answer"]
+    assert "REDACTED" in result["answer"]
+
+
+@pytest.mark.asyncio
+async def test_deep_analysis_runs_verification():
+    """Deep analysis must include verification results."""
+    from app.core.tasks.deep_analysis import run_deep_analysis_async
+
+    mock_llm = MagicMock()
+    mock_llm.provider_name = "openai"
+    mock_llm.chat = AsyncMock(
+        side_effect=[
+            '{"needs_search": true, "reasoning": "Need data", "search_queries": ["test"], "query_type": "temporal"}',
+            '{"is_consistent": true, "issues": [], "confidence": 0.95, "suggestion": ""}',
+        ]
+    )
+
+    async def mock_stream(*args, **kwargs):
+        yield "Answer text"
+
+    mock_llm.chat_stream = MagicMock(return_value=mock_stream())
+
+    mock_search = MagicMock()
+    mock_search.search_multiple = AsyncMock(
+        return_value=[
+            MagicMock(title="Result", url="https://example.com", content="data about the topic here", score=0.9),
+        ]
+    )
+
+    result = await run_deep_analysis_async(
+        query="test", llm=mock_llm, search_service=mock_search, max_rounds=1
+    )
+
+    assert "verification" in result
+    assert result["verification"]["is_consistent"] is True
+
+
+@pytest.mark.asyncio
+async def test_deep_analysis_refuses_when_search_fails():
+    """Deep analysis must refuse when search was needed but returned nothing."""
+    from app.core.tasks.deep_analysis import run_deep_analysis_async
+
+    mock_llm = MagicMock()
+    mock_llm.provider_name = "openai"
+    mock_llm.chat = AsyncMock(
+        return_value='{"needs_search": true, "reasoning": "Need data", "search_queries": ["latest news"], "query_type": "temporal"}'
+    )
+
+    mock_search = MagicMock()
+    mock_search.search_multiple = AsyncMock(return_value=[])
+
+    result = await run_deep_analysis_async(
+        query="What is the latest news?",
+        llm=mock_llm,
+        search_service=mock_search,
+        max_rounds=1,
+    )
+
+    assert result["status"] == "refused"
+    assert "unable" in result["answer"].lower() or "unavailable" in result["answer"].lower()
