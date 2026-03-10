@@ -4,6 +4,7 @@ import type {
   SearchingData,
   ChunkData,
   CitationsData,
+  VerificationData,
 } from "@/lib/types";
 import { getCsrfToken } from "@/lib/csrf";
 
@@ -13,6 +14,7 @@ interface SSECallbacks {
   onChunk?: (data: ChunkData) => void;
   onCitations?: (data: CitationsData) => void;
   onSearchFailed?: (data: { message: string }) => void;
+  onVerification?: (data: VerificationData) => void;
   onDone?: () => void;
   onError?: (error: string) => void;
 }
@@ -86,6 +88,9 @@ export function useSSE() {
                     break;
                   case "search_failed":
                     callbacks.onSearchFailed?.(data);
+                    break;
+                  case "verification":
+                    callbacks.onVerification?.(data);
                     break;
                   case "done":
                     if (!doneEmitted) { doneEmitted = true; callbacks.onDone?.(); }

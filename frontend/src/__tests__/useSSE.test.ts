@@ -112,4 +112,26 @@ describe("useSSE", () => {
 
     expect(onError).toHaveBeenCalledWith("Network error");
   });
+
+  it("parses verification event", async () => {
+    const sse =
+      'event: verification\ndata: {"is_consistent":true,"confidence":0.92,"issues":[],"suggestion":""}\n\nevent: done\ndata: {}\n\n';
+    mockFetchSSE(sse);
+
+    const onVerification = vi.fn();
+    const onDone = vi.fn();
+    const { result } = renderHook(() => useSSE());
+
+    await act(async () => {
+      await result.current.sendMessage("test", [], { onVerification, onDone });
+    });
+
+    expect(onVerification).toHaveBeenCalledWith({
+      is_consistent: true,
+      confidence: 0.92,
+      issues: [],
+      suggestion: "",
+    });
+    expect(onDone).toHaveBeenCalledOnce();
+  });
 });
