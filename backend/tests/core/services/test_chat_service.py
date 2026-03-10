@@ -177,17 +177,14 @@ async def test_greeting_fast_path_skips_planner(chat_service):
 
 
 @pytest.mark.asyncio
-async def test_search_failed_event_when_search_returns_empty(chat_service):
-    """When needs_search=True but search returns no results, emit SearchFailedEvent."""
+async def test_search_required_but_empty_returns_refusal(chat_service):
+    """When needs_search=True but search returns no results, refuse to answer."""
     planner_decision = PlannerDecision(
         needs_search=True,
         reasoning="Stock price query",
         search_queries=["TSMC stock price"],
         query_type="temporal",
     )
-
-    async def mock_execute(*args, **kwargs):
-        yield "I don't have the latest info."
 
     with (
         patch.object(
@@ -196,30 +193,95 @@ async def test_search_failed_event_when_search_returns_empty(chat_service):
         ),
         patch.object(
             chat_service._search, "search_multiple",
-            new_callable=AsyncMock, return_value=[],  # empty results
+            new_callable=AsyncMock, return_value=[],
         ),
         patch.object(
-            chat_service._executor, "execute", side_effect=mock_execute,
-        ),
-        patch.object(
-            chat_service._executor, "build_citations",
-            return_value=[],
-        ),
+            chat_service._executor, "execute",
+        ) as mock_exec,
     ):
         events = []
         async for event in chat_service.process_message("TSMC stock?"):
             events.append(event)
 
-        # Should have SearchFailedEvent
         failed_events = [e for e in events if isinstance(e, SearchFailedEvent)]
         assert len(failed_events) == 1
-        assert "no results" in failed_events[0].message.lower()
 
-        # No citations since search returned nothing
-        citation_events = [e for e in events if isinstance(e, CitationsEvent)]
-        assert len(citation_events) == 0
+        chunk_events = [e for e in events if isinstance(e, ChunkEvent)]
+        assert len(chunk_events) == 1
+        assert "unable" in chunk_events[0].content.lower() or "unavailable" in chunk_events[0].content.lower()
 
+        mock_exec.assert_not_called()
         assert isinstance(events[-1], DoneEvent)
+
+
+@pytest.mark.asyncio
+async def test_search_required_but_empty_returns_chinese_refusal(chat_service):
+    """Chinese query with empty search results gets Chinese refusal."""
+    planner_decision = PlannerDecision(
+        needs_search=True,
+        reasoning="Stock price query",
+        search_queries=["台積電股價"],
+        query_type="temporal",
+    )
+
+    with (
+        patch.object(
+            chat_service._planner, "plan",
+            new_callable=AsyncMock, return_value=planner_decision,
+        ),
+        patch.object(
+            chat_service._search, "search_multiple",
+            new_callable=AsyncMock, return_value=[],
+        ),
+    ):
+        events = []
+        async for event in chat_service.process_message("台積電今天股價多少"):
+            events.append(event)
+
+        chunk_events = [e for e in events if isinstance(e, ChunkEvent)]
+        assert len(chunk_events) == 1
+        assert "無法" in chunk_events[0].content or "驗證" in chunk_events[0].content
+
+
+@pytest.mark.asyncio
+async def test_citation_indices_match_filtered_results(chat_service):
+    """No-URL items filtered before executor; citations align with what LLM saw."""
+    planner_decision = PlannerDecision(
+        needs_search=True,
+        reasoning="Need info",
+        search_queries=["test"],
+        query_type="factual",
+    )
+    search_results = [
+        SearchResult(title="AI Answer", url="", content="AI summary text content here", score=0.5),
+        SearchResult(title="Web Result", url="https://example.com", content="Real content", score=0.9),
+    ]
+
+    captured_results = []
+
+    async def mock_execute(message, search_results, history=None):
+        captured_results.extend(search_results)
+        yield "answer [1]"
+
+    with (
+        patch.object(chat_service._planner, "plan", new_callable=AsyncMock, return_value=planner_decision),
+        patch.object(chat_service._search, "search_multiple", new_callable=AsyncMock, return_value=search_results),
+        patch.object(chat_service._executor, "execute", side_effect=mock_execute),
+    ):
+        events = []
+        async for event in chat_service.process_message("test query"):
+            events.append(event)
+
+        # Executor should only see the URL item (pre-filtered)
+        assert len(captured_results) == 1
+        assert captured_results[0].url == "https://example.com"
+
+        # Citations should also have only 1 item with index=1
+        citation_events = [e for e in events if isinstance(e, CitationsEvent)]
+        assert len(citation_events) == 1
+        assert len(citation_events[0].citations) == 1
+        assert citation_events[0].citations[0]["index"] == 1
+        assert citation_events[0].citations[0]["url"] == "https://example.com"
 
 
 @pytest.mark.asyncio
@@ -242,8 +304,10 @@ async def test_chat_with_fugle_and_tavily_parallel(chat_service):
     ]
 
     async def mock_execute(message, search_results, history=None):
-        assert len(search_results) >= 2  # Fugle + Tavily
-        assert search_results[0].title.startswith("Fugle:")
+        # Fugle data (url="") is kept by filter_renderable_results + Tavily web result
+        assert len(search_results) >= 2
+        fugle_results = [r for r in search_results if r.title.startswith("Fugle:")]
+        assert len(fugle_results) == 1
         for chunk in ["台積電 ", "收盤 1,975 [1]"]:
             yield chunk
 
@@ -441,8 +505,10 @@ async def test_chat_with_finnhub_and_tavily_parallel(mock_llm):
     ]
 
     async def mock_execute(message, search_results, history=None):
-        assert len(search_results) >= 2  # Finnhub + Tavily
-        assert search_results[0].title.startswith("Finnhub:")
+        # Finnhub data (url="") is kept by filter_renderable_results + Tavily web result
+        assert len(search_results) >= 2
+        finnhub_results = [r for r in search_results if r.title.startswith("Finnhub:")]
+        assert len(finnhub_results) == 1
         for chunk in ["AAPL ", "is $189.50 [1]"]:
             yield chunk
 
@@ -512,7 +578,12 @@ async def test_chat_with_fugle_and_finnhub_and_tavily(mock_llm):
     )
 
     async def mock_execute(message, search_results, history=None):
+        # Fugle + Finnhub data (url="") kept by filter_renderable_results + Tavily web result
         assert len(search_results) >= 3
+        fugle_results = [r for r in search_results if r.title.startswith("Fugle:")]
+        finnhub_results = [r for r in search_results if r.title.startswith("Finnhub:")]
+        assert len(fugle_results) == 1
+        assert len(finnhub_results) == 1
         for chunk in ["comparison"]:
             yield chunk
 
@@ -596,8 +667,7 @@ async def test_chat_service_sanitizes_search_results_before_executor(chat_servic
         score=0.9,
     )
 
-    async def mock_execute(*args, **kwargs):
-        search_results = kwargs["search_results"]
+    async def mock_execute(message, search_results, history=None):
         assert "[filtered]" in search_results[0].title
         assert "[filtered]" in search_results[0].excerpt
         assert search_results[0].facts
@@ -631,13 +701,12 @@ async def test_chat_service_passes_normalized_results_to_executor(chat_service):
         score=0.9,
     )
 
-    async def mock_execute(*args, **kwargs):
-        normalized = kwargs["search_results"]
-        assert normalized[0].source_kind == "web"
-        assert normalized[0].publisher == "Reuters"
-        assert normalized[0].published_at == "2026-03-08"
-        assert normalized[0].facts
-        assert normalized[0].numbers
+    async def mock_execute(message, search_results, history=None):
+        assert search_results[0].source_kind == "web"
+        assert search_results[0].publisher == "Reuters"
+        assert search_results[0].published_at == "2026-03-08"
+        assert search_results[0].facts
+        assert search_results[0].numbers
         yield "safe"
 
     with (

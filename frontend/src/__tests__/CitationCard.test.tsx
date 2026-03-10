@@ -35,6 +35,25 @@ describe("CitationCard", () => {
     expect(screen.getByRole("link").getAttribute("href")).toBe("#");
   });
 
+  it("renders data source citation without link", () => {
+    render(
+      <CitationCard
+        citation={{
+          index: 1,
+          title: "Fugle: 2330 fugle_quote",
+          url: "",
+          snippet: "price data",
+        }}
+      />
+    );
+
+    expect(screen.getByText("1")).toBeDefined();
+    expect(screen.getByText("Data Source")).toBeDefined();
+    expect(screen.getByText("Fugle: 2330 fugle_quote")).toBeDefined();
+    // Should NOT be an <a> tag
+    expect(screen.queryByRole("link")).toBeNull();
+  });
+
   it("falls back to raw URL on invalid URL", () => {
     render(
       <CitationCard

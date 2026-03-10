@@ -7,7 +7,13 @@ from collections.abc import AsyncGenerator
 from app.core.agents.planner import PlannerAgent
 from app.core.agents.executor import ExecutorAgent
 from app.core.agents.verifier import VerifierAgent
-from app.core.security import guard_model_output, normalize_search_results, sanitize_search_results
+from app.core.security import (
+    filter_renderable_results,
+    guard_model_output,
+    normalize_search_results,
+    sanitize_search_results,
+)
+from app.core.pipelines.secure_answer import secure_answer_pipeline
 from app.core.services.llm_client import LLMClient
 from app.core.services.search_service import SearchService
 from app.core.services.fugle_service import FugleService
@@ -153,45 +159,49 @@ class ChatService:
 
         all_results = data_results + search_results
         all_results = sanitize_search_results(all_results)
-        normalized_results = normalize_search_results(all_results)
+        # Pre-filter: remove no-URL items so LLM, verifier, and citations use the same set
+        renderable_results = filter_renderable_results(all_results)
+        normalized_results = normalize_search_results(renderable_results)
 
-        # Step 2.5: Warn if search was needed but returned nothing
-        search_failed = decision.needs_search and not all_results
+        # Step 2.5: Warn if search was needed but returned nothing renderable
+        search_failed = decision.needs_search and not normalized_results
         if search_failed:
-            logger.warning("Search returned 0 results for temporal query: '%s'", message[:80])
+            logger.warning("Search returned 0 renderable results for temporal query: '%s'", message[:80])
             yield SearchFailedEvent(
-                message="Web search returned no results. The answer below may not reflect the latest information."
+                message="Web search returned no results. Unable to retrieve verified information."
             )
 
-        # Step 3: Executor generates answer
-        answer_chunks = []
-        async for chunk in self._executor.execute(
+        # Secured answer pipeline (refusal / guarded generation / verification)
+        pipeline_result = await secure_answer_pipeline(
             message=message,
-            search_results=normalized_results,
+            needs_search=decision.needs_search,
+            normalized_results=normalized_results,
+            executor=self._executor,
+            verifier=self._verifier,
             history=history,
-        ):
-            guarded = guard_model_output(chunk)
-            answer_chunks.append(guarded)
-            yield ChunkEvent(content=guarded)
+        )
 
-        # Step 3.5: Verify answer against sources (only when search was used)
-        if normalized_results:
-            full_answer = "".join(answer_chunks)
-            verification = await self._verifier.verify(
-                query=message,
-                answer=full_answer,
-                search_results=normalized_results,
-            )
+        if pipeline_result["refused"]:
+            yield ChunkEvent(content=pipeline_result["refusal_message"])
+            yield DoneEvent()
+            return
+
+        for chunk in pipeline_result["guarded_chunks"]:
+            yield ChunkEvent(content=chunk)
+
+        # Yield verification results
+        if pipeline_result["verification"] is not None:
+            v = pipeline_result["verification"]
             yield VerificationEvent(
-                is_consistent=verification.is_consistent,
-                confidence=verification.confidence,
-                issues=verification.issues,
-                suggestion=verification.suggestion,
+                is_consistent=v.is_consistent,
+                confidence=v.confidence,
+                issues=v.issues,
+                suggestion=v.suggestion,
             )
 
-        # Step 4: Send citations
-        if all_results:
-            citations = self._executor.build_citations(all_results)
+        # Citations (from pre-filtered renderable results)
+        if renderable_results:
+            citations = self._executor.build_citations(renderable_results)
             yield CitationsEvent(
                 citations=[
                     {"index": c.index, "title": c.title, "url": c.url, "snippet": c.snippet}

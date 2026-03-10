@@ -77,6 +77,7 @@ class ExecutorAgent:
         )
 
     def build_citations(self, search_results: list[SearchResult]) -> list[Citation]:
+        """Build citations from pre-filtered search results."""
         return [
             Citation(
                 index=i + 1,
@@ -85,7 +86,6 @@ class ExecutorAgent:
                 snippet=r.content[:200],
             )
             for i, r in enumerate(search_results)
-            if r.url  # exclude Tavily AI answer (no URL)
         ]
 
     def _format_search_results(self, results: list[NormalizedSearchResult]) -> str:

@@ -111,20 +111,39 @@ class TestGuardModelOutput:
 # ---------------------------------------------------------------------------
 
 class TestFilterRenderableResults:
-    def test_keeps_url_items(self):
+    def test_keeps_url_and_data_source_items(self):
         results = [
             SearchResult(title="Web", url="https://example.com", content="text", score=0.9),
             SearchResult(title="Tavily AI Answer", url="", content="summary", score=0.5),
             SearchResult(title="Also web", url="https://other.com", content="more", score=0.8),
+            SearchResult(title="Fugle: 2330 fugle_quote", url="", content="price data", score=1.0),
         ]
         filtered = filter_renderable_results(results)
-        assert len(filtered) == 2
-        assert all(r.url for r in filtered)
+        assert len(filtered) == 3  # web + web + Fugle (Tavily removed)
+        titles = [r.title for r in filtered]
+        assert "Tavily AI Answer" not in titles
+        assert "Fugle: 2330 fugle_quote" in titles
+
+    def test_keeps_finnhub_data_source(self):
+        results = [
+            SearchResult(title="Finnhub: AAPL finnhub_quote", url="", content="price", score=1.0),
+        ]
+        filtered = filter_renderable_results(results)
+        assert len(filtered) == 1
+        assert filtered[0].title == "Finnhub: AAPL finnhub_quote"
+
+    def test_keeps_rter_info_data_source(self):
+        results = [
+            SearchResult(title="tw.rter.info: USD rter_forex", url="", content="rates", score=1.0),
+        ]
+        filtered = filter_renderable_results(results)
+        assert len(filtered) == 1
+        assert filtered[0].title == "tw.rter.info: USD rter_forex"
 
     def test_empty_input(self):
         assert filter_renderable_results([]) == []
 
-    def test_all_no_url(self):
+    def test_all_no_url_no_data_source(self):
         results = [
             SearchResult(title="AI Answer", url="", content="summary", score=0.5),
         ]

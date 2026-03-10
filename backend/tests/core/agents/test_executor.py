@@ -95,20 +95,22 @@ def test_build_citations(executor, sample_search_results):
     assert citations[1].index == 2
 
 
-def test_build_citations_excludes_tavily_answer(executor, sample_search_results):
-    results_with_answer = [
+def test_build_citations_includes_all_pre_filtered_results(executor, sample_search_results):
+    """build_citations includes all items (pre-filtered upstream by filter_renderable_results)."""
+    results_with_data_source = [
         SearchResult(
-            title="Tavily AI Answer",
+            title="Fugle: 2330 fugle_quote",
             url="",
-            content="TSMC stock price is $180.",
+            content="台積電(2330) 最新價 1,975 元",
             score=1.0,
         ),
     ] + sample_search_results
 
-    citations = executor.build_citations(results_with_answer)
-    assert len(citations) == 2
-    assert all(c.url for c in citations)
-    assert citations[0].title == "TSMC Stock"
+    citations = executor.build_citations(results_with_data_source)
+    assert len(citations) == 3
+    assert citations[0].title == "Fugle: 2330 fugle_quote"
+    assert citations[0].url == ""
+    assert citations[1].title == "TSMC Stock"
 
 
 def test_format_search_results_uses_structured_untrusted_blocks(executor, sample_search_results):

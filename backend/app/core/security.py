@@ -136,6 +136,16 @@ def _classify_source_kind(result: SearchResult) -> str:
     return "web"
 
 
+_DATA_SOURCE_PREFIXES = ("Fugle:", "Finnhub:", "tw.rter.info:")
+
+
 def filter_renderable_results(results: list[SearchResult]) -> list[SearchResult]:
-    """Keep only search results that have a URL and can be rendered as citations."""
-    return [r for r in results if r.url]
+    """Remove AI-generated summaries (no URL, not a known data source).
+
+    Keeps: web results (have URL) and market data (Fugle/Finnhub/tw.rter.info).
+    Removes: Tavily AI Answer and similar AI summaries with no URL.
+    """
+    return [
+        r for r in results
+        if r.url or r.title.startswith(_DATA_SOURCE_PREFIXES)
+    ]
