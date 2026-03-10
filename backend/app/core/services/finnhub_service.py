@@ -5,6 +5,7 @@ import logging
 from datetime import datetime, timedelta
 
 import finnhub
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -49,11 +50,15 @@ class FinnhubService:
             return ""
 
     async def get_forex_rates(self, symbol: str) -> str:
+        """Fetch exchange rates from tw.rter.info (free, no API key needed)."""
         try:
-            data = await asyncio.to_thread(self._client.forex_rates, base=symbol)
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get("https://tw.rter.info/capi.php")
+                resp.raise_for_status()
+                data = resp.json()
             return self.format_forex_rates(data, symbol)
         except Exception as e:
-            logger.warning("Finnhub forex rates failed for %s: %s", symbol, e)
+            logger.warning("Forex rates failed for %s: %s", symbol, e)
             return ""
 
     async def get_profile(self, symbol: str) -> str:
@@ -175,13 +180,36 @@ class FinnhubService:
         return "\n".join(lines)
 
     def format_forex_rates(self, data: dict, base: str) -> str:
-        quotes = data.get("quote", {})
-        if not quotes:
+        """Format tw.rter.info response. Keys are like 'USDTWD', values have 'Exrate' and 'UTC'."""
+        if not data:
             return ""
-        lines = [f"Exchange Rates (base: {base}):"]
-        for currency, rate in sorted(quotes.items()):
-            lines.append(f"  {currency}: {rate}")
-        return "\n".join(lines)
+        # Common target currencies to show
+        targets = ["TWD", "JPY", "EUR", "GBP", "CNY", "HKD", "KRW", "AUD", "CAD", "CHF", "SGD"]
+        lines = []
+        utc_time = ""
+        for target in targets:
+            key = f"{base}{target}"
+            if key in data:
+                entry = data[key]
+                rate = entry.get("Exrate")
+                if rate is not None:
+                    lines.append(f"  {base}/{target}: {rate}")
+                    if not utc_time:
+                        utc_time = entry.get("UTC", "")
+        if not lines:
+            # Fallback: show all matching entries for this base
+            for key, entry in sorted(data.items()):
+                if key.startswith(base) and len(key) == len(base) + 3:
+                    rate = entry.get("Exrate")
+                    if rate is not None:
+                        target = key[len(base):]
+                        lines.append(f"  {base}/{target}: {rate}")
+        if not lines:
+            return ""
+        header = f"Exchange Rates (base: {base})"
+        if utc_time:
+            header += f" — Updated: {utc_time}"
+        return header + "\n" + "\n".join(lines)
 
     def format_profile(self, data: dict) -> str:
         name = data.get("name", "")

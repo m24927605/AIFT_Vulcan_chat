@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock, AsyncMock
 
 from app.core.services.finnhub_service import FinnhubService
 
@@ -56,13 +56,11 @@ def _mock_candles_no_data_response():
 
 
 def _mock_forex_response():
+    """tw.rter.info format: keys are like USDTWD, values have Exrate and UTC."""
     return {
-        "base": "USD",
-        "quote": {
-            "TWD": 32.15,
-            "EUR": 0.92,
-            "JPY": 149.50,
-        },
+        "USDTWD": {"Exrate": 32.15, "UTC": "2026-03-10 05:00:00"},
+        "USDEUR": {"Exrate": 0.92, "UTC": "2026-03-10 05:00:00"},
+        "USDJPY": {"Exrate": 149.50, "UTC": "2026-03-10 05:00:00"},
     }
 
 
@@ -288,11 +286,11 @@ class TestFormatMethods:
 
     def test_format_forex(self, finnhub_service):
         text = finnhub_service.format_forex_rates(_mock_forex_response(), "USD")
-        assert "USD" in text
-        assert "TWD" in text
+        assert "USD/TWD" in text
         assert "32.15" in text
-        assert "EUR" in text
+        assert "USD/EUR" in text
         assert "0.92" in text
+        assert "Updated:" in text
         assert "JPY" in text
         assert "149.50" in text or "149.5" in text
 
@@ -381,9 +379,16 @@ class TestAsyncMethods:
 
     @pytest.mark.asyncio
     async def test_get_forex(self, finnhub_service):
-        with patch.object(finnhub_service, "_client") as mock_client:
-            mock_client.forex_rates.return_value = _mock_forex_response()
+        mock_response = MagicMock()
+        mock_response.json.return_value = _mock_forex_response()
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.core.services.finnhub_service.httpx.AsyncClient", return_value=mock_client):
             result = await finnhub_service.get_forex_rates("USD")
-            assert "USD" in result
-            assert "TWD" in result
+            assert "USD/TWD" in result
             assert "32.15" in result
