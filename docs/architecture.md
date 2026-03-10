@@ -149,3 +149,14 @@ LLMClient (Protocol)
 | Fugle for TW stocks | Tavily only | Exchange-grade data for Taiwan stocks; Tavily supplements with news/analysis |
 | Finnhub API | Alpha Vantage, Yahoo Finance | Free tier with 60 calls/min, comprehensive endpoints (quote, candles, financials, news, earnings, price target, recommendation, insider), official Python SDK |
 | tw.rter.info for forex | Finnhub forex (paid-only) | Free, no API key needed, real-time exchange rates for major currency pairs |
+
+## Known Limitations
+
+| Area | Limitation | Mitigation |
+|------|-----------|------------|
+| Search source reliability | Tavily results may include low-quality or outdated sources | Fugle/Finnhub/tw.rter.info provide exchange-grade data; Executor enforces exact quoting; Verifier cross-checks numbers |
+| Planner misjudgment | LLM-based planning is non-deterministic | Deterministic fast-paths + temporal pre-check overrides + low-risk fallback |
+| LLM fallback coverage | 4xx client errors are not retried | Primary/fallback configurable via env vars; only timeout/429/5xx trigger fallback |
+| SQLite scalability | Single-writer; not suitable for high-concurrency production | Sufficient for demo; storage abstraction allows PostgreSQL migration |
+| Context window | Full history sent to agents; long conversations may exceed token limits | Not yet implemented; planned: sliding window + summarization |
+| Telegram sync latency | Transient network errors may delay push | Retry with exponential backoff (3 attempts, 1s/2s) |
