@@ -1,6 +1,7 @@
 # Vulcan Chatbot
 
 > **Live Demo**: [https://vulcanchat.xyz](https://vulcanchat.xyz)
+> **Slides**: [https://vulcanchat.xyz/slides](https://vulcanchat.xyz/slides)
 
 A web search chatbot for Vulcan, a cybersecurity company, powered by a 3-Agent AI architecture (Planner → Executor → Verifier) that intelligently searches the web, provides answers with cited sources, and verifies output consistency. Built with defense-in-depth security across every layer — from input sanitization and prompt-injection hardening to adversarial red-team testing. Supports both web UI and Telegram bot with bidirectional message sync.
 
