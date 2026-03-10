@@ -48,6 +48,10 @@ export const translations = {
     tourStep4Desc: "AI can search the web for real-time answers with cited sources. Your conversations sync between web and Telegram in real time.",
     // Footer disclaimer
     disclaimer: "This is a demo project for academic purposes only. Not a commercial service. AI responses may be inaccurate — please verify important information. Conversations are stored on the server for functionality; no data is shared with third parties.",
+    // Verification
+    verificationConsistent: "Verified consistent",
+    verificationInconsistent: "Inconsistency detected",
+    verificationSuggestion: "Suggestion",
   },
   "zh-TW": {
     inputPlaceholder: "輸入任何問題...",
@@ -87,6 +91,10 @@ export const translations = {
     tourStep4Desc: "AI 可搜尋網路取得即時解答與引用來源，你的對話會在網頁和 Telegram 之間即時同步。",
     // Footer disclaimer
     disclaimer: "本網站為學術展示專案，非商業服務。AI 回覆可能不準確，重要資訊請自行查證。對話內容儲存於伺服器以提供服務功能，不會與第三方分享。",
+    // Verification
+    verificationConsistent: "驗證一致",
+    verificationInconsistent: "發現不一致",
+    verificationSuggestion: "建議",
   },
 } as const;
 
