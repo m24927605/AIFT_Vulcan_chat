@@ -16,6 +16,7 @@ import type {
   CitationItem,
   PlannerData,
   SearchingData,
+  VerificationData,
   Conversation,
 } from "@/lib/types";
 
@@ -26,6 +27,7 @@ interface ChatState {
   planner: PlannerData | null;
   searchStatus: SearchingData[];
   streamingContent: string;
+  verification: VerificationData | null;
 }
 
 const POLL_INTERVAL = 3000;
@@ -37,6 +39,7 @@ const INITIAL_CHAT_STATE: ChatState = {
   planner: null,
   searchStatus: [],
   streamingContent: "",
+  verification: null,
 };
 
 function mapApiMessage(m: {
@@ -341,6 +344,7 @@ export function useChat() {
         searchStatus: [],
         streamingContent: "",
         citations: [],
+        verification: null,
       }));
 
       let fullContent = "";
@@ -388,6 +392,9 @@ export function useChat() {
               ...prev,
               citations: data.citations,
             }));
+          },
+          onVerification: (data) => {
+            setState((prev) => ({ ...prev, verification: data }));
           },
           onDone: () => {
             const assistantMessage: ChatMessage = {

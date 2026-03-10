@@ -204,4 +204,38 @@ describe("useChat", () => {
     expect(alertSpy).toHaveBeenCalledOnce();
     alertSpy.mockRestore();
   });
+
+  it("verification state is null by default and resets on newChat", async () => {
+    const { result } = await renderUseChatHook();
+
+    expect(result.current.verification).toBeNull();
+
+    act(() => {
+      result.current.newChat();
+    });
+
+    expect(result.current.verification).toBeNull();
+  });
+
+  it("verification state resets on loadConversation", async () => {
+    const { fetchMessages: fetchMsgsMock } = await import("@/lib/api");
+    vi.mocked(fetchMsgsMock).mockResolvedValue([]);
+    const { result } = await renderUseChatHook();
+
+    expect(result.current.verification).toBeNull();
+
+    await act(async () => {
+      await result.current.loadConversation({
+        id: "conv-1",
+        title: "Test",
+        messages: [],
+        createdAt: "2026-01-01",
+      });
+    });
+
+    expect(result.current.verification).toBeNull();
+
+    // Reset mocks
+    vi.mocked(fetchMsgsMock).mockResolvedValue([]);
+  });
 });
