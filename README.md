@@ -186,6 +186,52 @@ make test-backend     # Run 361 backend tests
 make test-frontend    # Run frontend tests
 ```
 
+### Using Docker Compose
+
+Docker Compose supports two modes: **development** (hot reload) and **production-like** (built artifacts).
+
+**Prerequisites:**
+
+```bash
+cp frontend/.env.example frontend/.env
+cp backend/.env.example backend/.env
+# Edit both .env files with your API keys
+```
+
+**Development mode** (default — auto-loads override file, supports hot reload):
+
+```bash
+docker compose up                        # frontend + backend + redis
+docker compose --profile worker up       # also start Celery worker
+docker compose up -d                     # run in background
+docker compose logs -f backend           # follow logs
+```
+
+**Production-like mode** (builds images, runs production artifacts):
+
+```bash
+docker compose -f docker-compose.yml up --build
+docker compose -f docker-compose.yml --profile worker up --build
+```
+
+**Common operations:**
+
+```bash
+docker compose down                      # stop all services
+docker compose down -v                   # stop and delete all data (SQLite, Redis)
+docker compose up --build backend        # rebuild a single service
+docker compose restart worker            # restart worker after code change
+```
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| frontend | http://localhost:3000 | Next.js web UI |
+| backend | http://localhost:8000 | FastAPI API server |
+| redis | localhost:6379 | Celery message broker |
+| worker | — | Celery worker (requires `--profile worker`) |
+
+> **Note:** In development mode, frontend and backend code changes auto-reload. Celery worker requires manual restart (`docker compose restart worker`) after code changes.
+
 ## Testing
 
 ```bash
