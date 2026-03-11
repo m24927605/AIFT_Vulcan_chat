@@ -201,8 +201,8 @@ cp backend/.env.example backend/.env
 **Development mode** (default — auto-loads override file, supports hot reload):
 
 ```bash
-docker compose up                        # frontend + backend + redis
-docker compose --profile worker up       # also start Celery worker
+docker compose up --build                # frontend + backend + redis
+docker compose --profile worker up --build  # also start Celery worker
 docker compose up -d                     # run in background
 docker compose logs -f backend           # follow logs
 ```
@@ -230,7 +230,7 @@ docker compose restart worker            # restart worker after code change
 | redis | localhost:6379 | Celery message broker |
 | worker | — | Celery worker (requires `--profile worker`) |
 
-> **Note:** In development mode, frontend and backend code changes auto-reload. Celery worker requires manual restart (`docker compose restart worker`) after code changes.
+> **Note:** In development mode, frontend and backend code changes auto-reload. Celery worker requires manual restart (`docker compose restart worker`) after code changes. Switching between dev and production-like modes requires `--build` to rebuild the frontend image (they use different build targets).
 
 ## Testing
 
