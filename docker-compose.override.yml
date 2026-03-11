@@ -5,6 +5,7 @@ services:
       target: builder
     command: npm run dev
     volumes:
+      - ./frontend/app:/app/app
       - ./frontend/src:/app/src
       - ./frontend/public:/app/public
     environment:
