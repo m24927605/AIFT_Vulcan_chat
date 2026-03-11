@@ -3,9 +3,8 @@ services:
     build:
       context: ./frontend
       target: builder
-    command: npm run dev
+    command: sh -c "rm -rf .next app && npm run dev"
     volumes:
-      - ./frontend/app:/app/app
       - ./frontend/src:/app/src
       - ./frontend/public:/app/public
     environment:
